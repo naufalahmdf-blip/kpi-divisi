@@ -71,30 +71,3 @@ export function aggregateAllUsers(
 
   return result;
 }
-
-/**
- * Compute rate value for a rate KPI.
- * Rate = rawValue / denominator_actual (plain ratio)
- * rawValue is the rate KPI's own stored actual (user input).
- */
-export function computeRateActual(
-  rawValue: number,
-  denominatorTemplateId: string,
-  getActual: (templateId: string) => number
-): number {
-  const denominator = getActual(denominatorTemplateId);
-  if (denominator === 0) return 0;
-  return Math.round((rawValue / denominator) * 100) / 100;
-}
-
-/**
- * Check if a template is a rate KPI (has a denominator linked).
- */
-export function isRateKpi(template: { denominator_template_id?: string | null }): boolean {
-  return !!template.denominator_template_id;
-}
-
-export function isOtdKpi(template: { kpi_name: string }): boolean {
-  const name = template.kpi_name.toLowerCase();
-  return name.includes('on-time delivery') || name.includes('on time delivery') || name.includes('otd');
-}

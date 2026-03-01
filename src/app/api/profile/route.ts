@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { getSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
-import { logActivity, getClientIp } from '@/lib/activity-log';
 
 // GET: Get current user profile
 export async function GET() {
@@ -42,18 +41,6 @@ export async function PUT(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-
-    await logActivity({
-      userId: user.id, userName: user.full_name, userEmail: user.email,
-      action: 'UPDATE', entityType: 'PROFILE', entityId: user.id,
-      details: {
-        changed_fields: [
-          ...(full_name !== undefined ? ['full_name'] : []),
-          ...(avatar_url !== undefined ? ['avatar_url'] : []),
-        ],
-      },
-      ipAddress: getClientIp(request.headers),
-    });
 
     return NextResponse.json({ success: true });
   } catch {
@@ -102,13 +89,6 @@ export async function POST(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-
-    await logActivity({
-      userId: user.id, userName: user.full_name, userEmail: user.email,
-      action: 'CHANGE_PASSWORD', entityType: 'PROFILE', entityId: user.id,
-      details: { self_service: true },
-      ipAddress: getClientIp(request.headers),
-    });
 
     return NextResponse.json({ success: true });
   } catch {

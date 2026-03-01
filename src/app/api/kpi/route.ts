@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
-import { aggregateWeeklyToMonthly, computeRateActual, isRateKpi } from '@/lib/aggregation';
-import { logActivity, getClientIp } from '@/lib/activity-log';
-import { calculateAttendanceScore } from '@/lib/attendance';
-import { fetchTrelloOtd } from '@/lib/trello';
+import { aggregateWeeklyToMonthly } from '@/lib/aggregation';
 
 // GET: Fetch KPI entries for current user or specified user (admin)
 export async function GET(request: NextRequest) {
@@ -41,17 +38,6 @@ export async function GET(request: NextRequest) {
     .eq('division_id', targetUser.division_id)
     .order('sort_order');
 
-  // Fetch attendance entry for this user/month (always monthly)
-  const { data: attendanceData } = await supabaseAdmin
-    .from('attendance_entries')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('year', year)
-    .eq('month', month)
-    .maybeSingle();
-
-  const attendanceScore = calculateAttendanceScore(attendanceData);
-
   if (periodType === 'monthly') {
     // Monthly: aggregate from ALL weekly entries in this month
     const { data: weeklyEntries } = await supabaseAdmin
@@ -67,41 +53,10 @@ export async function GET(request: NextRequest) {
       (templates || []).map((t) => ({ id: t.id, formula_type: t.formula_type as 'higher_better' | 'lower_better' }))
     );
 
-    // Build lookup for aggregated actuals
-    const aggMap: Record<string, number> = {};
-    for (const a of aggregated) {
-      aggMap[a.template_id] = a.actual_value;
-    }
-
-    // Auto-inject Trello OTD for On-Time Delivery templates
-    const otdTemplate = (templates || []).find((t) => {
-      const name = t.kpi_name.toLowerCase();
-      return name.includes('on-time delivery') || name.includes('on time delivery') || name.includes('otd');
-    });
-    let trelloOtd: { otdPercentage: number; onTime: number; late: number; total: number } | null = null;
-    if (otdTemplate) {
-      trelloOtd = await fetchTrelloOtd(targetUser.division_id, year, month);
-      if (trelloOtd) {
-        aggMap[otdTemplate.id] = trelloOtd.otdPercentage;
-      }
-    }
-
-    // Compute rate KPI display values
-    const rateDisplayValues: Record<string, number> = {};
-    for (const t of (templates || [])) {
-      if (isRateKpi(t)) {
-        rateDisplayValues[t.id] = computeRateActual(
-          aggMap[t.id] ?? 0, t.denominator_template_id!,
-          (tid) => aggMap[tid] ?? 0
-        );
-      }
-    }
-
     const syntheticEntries = aggregated.map((a) => ({
       id: `agg-${a.template_id}`,
       template_id: a.template_id,
       actual_value: a.actual_value,
-      rate_display: rateDisplayValues[a.template_id] ?? null,
       notes: null,
       weeks_filled: a.weeks_filled,
     }));
@@ -112,9 +67,6 @@ export async function GET(request: NextRequest) {
       entries: syntheticEntries,
       period: { type: 'monthly', year, month, week: null },
       is_aggregated: true,
-      attendance: attendanceData ?? null,
-      attendanceScore,
-      trello_otd: trelloOtd,
     });
   }
 
@@ -133,41 +85,11 @@ export async function GET(request: NextRequest) {
 
   const { data: entries } = await query;
 
-  // Compute rate display values for weekly view
-  const weeklyEntryMap: Record<string, number> = {};
-  for (const e of (entries || [])) {
-    weeklyEntryMap[e.template_id] = Number(e.actual_value);
-  }
-
-  const allEntries = (entries || []).map((e) => {
-    const t = (templates || []).find((tpl) => tpl.id === e.template_id);
-    const rateDisplay = t && isRateKpi(t)
-      ? computeRateActual(
-          Number(e.actual_value), t.denominator_template_id!,
-          (tid) => weeklyEntryMap[tid] ?? 0
-        )
-      : null;
-    return { ...e, rate_display: rateDisplay };
-  });
-
-  // Auto-fetch Trello OTD for weekly view too
-  const weeklyOtdTemplate = (templates || []).find((t) => {
-    const name = t.kpi_name.toLowerCase();
-    return name.includes('on-time delivery') || name.includes('on time delivery') || name.includes('otd');
-  });
-  let weeklyTrelloOtd: { otdPercentage: number; onTime: number; late: number; total: number } | null = null;
-  if (weeklyOtdTemplate) {
-    weeklyTrelloOtd = await fetchTrelloOtd(targetUser.division_id, year, month);
-  }
-
   return NextResponse.json({
     user: targetUser,
     templates: templates || [],
-    entries: allEntries,
+    entries: entries || [],
     period: { type: 'weekly', year, month, week },
-    attendance: attendanceData ?? null,
-    attendanceScore,
-    trello_otd: weeklyTrelloOtd,
   });
 }
 
@@ -188,9 +110,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!week || week < 1 || week > 4) {
+    if (!week || week < 1 || week > 5) {
       return NextResponse.json(
-        { error: 'Minggu harus antara 1-4' },
+        { error: 'Minggu harus antara 1-5' },
         { status: 400 }
       );
     }
@@ -222,17 +144,6 @@ export async function POST(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-
-    await logActivity({
-      userId: user.id, userName: user.full_name, userEmail: user.email,
-      action: 'UPDATE', entityType: 'KPI_ENTRY', entityId: userId,
-      details: {
-        period: { type: 'weekly', year, month, week },
-        entries_count: entries.length,
-        ...(userId !== user.id ? { submitted_for: userId } : {}),
-      },
-      ipAddress: getClientIp(request.headers),
-    });
 
     return NextResponse.json({ success: true });
   } catch {

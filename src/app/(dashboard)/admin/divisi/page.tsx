@@ -73,13 +73,13 @@ export default function AdminDivisiBrowsePage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-        <div className="flex items-center gap-3">
-          <TrendingUp className="w-6 h-6 sm:w-7 sm:h-7 text-brand-300 flex-shrink-0" />
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-white">Performa Divisi</h1>
-            <p className="text-gray-500 text-xs sm:text-sm">{periodLabel}</p>
-          </div>
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <TrendingUp className="w-7 h-7 text-brand-300" />
+            Performa Divisi
+          </h1>
+          <p className="text-gray-500 text-sm mt-1">{periodLabel}</p>
         </div>
         <PeriodSelector
           periodType={periodType}

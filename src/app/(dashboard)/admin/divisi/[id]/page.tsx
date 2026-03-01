@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Building2, Users, Trophy, Pencil, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Building2, Users, Trophy, Pencil } from 'lucide-react';
 import PeriodSelector from '@/components/PeriodSelector';
+import KpiPieChart from '@/components/KpiPieChart';
 import EmployeeProfileModal, { EmployeeData } from '@/components/EmployeeProfileModal';
 import { cn, getGradeColor, getGradeBg, getMonthName, getCurrentPeriod } from '@/lib/utils';
 
@@ -13,19 +14,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   Efficiency: '#3b82f6',
   Quality: '#10b981',
   'Creative Development': '#f59e0b',
-  Speed: '#8b5cf6',
-  Accuracy: '#ef4444',
-  Authority: '#06b6d4',
-  Volume: '#f97316',
-  Lead: '#ec4899',
-  Followers: '#14b8a6',
-  Security: '#dc2626',
-  Recruitment: '#7c3aed',
-  Retention: '#0ea5e9',
-  Compliance: '#fb923c',
-  Engagement: '#a855f7',
-  Culture: '#d946ef',
-  Absensi: '#22c55e',
 };
 
 interface MemberScore {
@@ -107,10 +95,11 @@ export default function AdminDivisionDetailPage() {
     ? `${getMonthName(month)} ${year}`
     : `Minggu ${week}, ${getMonthName(month)} ${year}`;
 
-  const gradeCount = (data?.members || []).reduce((acc, m) => {
-    acc[m.grade] = (acc[m.grade] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  const categoryPieData = (data?.categoryBreakdown || []).map((cat) => ({
+    name: cat.category,
+    value: Math.round(cat.avgScore * 100) / 100,
+    color: CATEGORY_COLORS[cat.category] || '#6b7280',
+  }));
 
   const handleMemberClick = (member: Member) => {
     setSelectedEmployee({
@@ -146,19 +135,17 @@ export default function AdminDivisionDetailPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <Link href="/admin/divisi" className="inline-flex items-center gap-1.5 text-xs sm:text-sm text-gray-500 hover:text-white transition-colors mb-2">
-            <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          <Link href="/admin/divisi" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors mb-2">
+            <ArrowLeft className="w-4 h-4" />
             Kembali
           </Link>
-          <div className="flex items-center gap-3">
-            <Building2 className="w-6 h-6 sm:w-7 sm:h-7 text-brand-300 flex-shrink-0" />
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-white">{data.division.name}</h1>
-              <p className="text-gray-500 text-xs sm:text-sm">{periodLabel}</p>
-            </div>
-          </div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <Building2 className="w-7 h-7 text-brand-300" />
+            {data.division.name}
+          </h1>
+          <p className="text-gray-500 text-sm mt-1">{periodLabel}</p>
         </div>
         <PeriodSelector
           periodType={periodType}
@@ -266,70 +253,15 @@ export default function AdminDivisionDetailPage() {
           </div>
         </div>
 
-        {/* Right Column */}
-        <div className="space-y-4">
-          {/* Category Performance Bars */}
-          {data.categoryBreakdown.length > 0 && (
-            <div className="bg-[#12121a] border border-white/[0.06] rounded-2xl p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <TrendingUp className="w-4 h-4 text-brand-300" />
-                <h3 className="text-sm font-semibold text-white">Performa per Kategori</h3>
-              </div>
-              <div className="space-y-3.5">
-                {data.categoryBreakdown.map((cat) => {
-                  const pct = Math.min(cat.avgScore, 100);
-                  const barColor = cat.avgScore >= 80 ? '#10b981' : cat.avgScore >= 60 ? '#f59e0b' : '#ef4444';
-                  const textColor = cat.avgScore >= 80 ? 'text-emerald-400' : cat.avgScore >= 60 ? 'text-amber-400' : 'text-red-400';
-                  const catColor = CATEGORY_COLORS[cat.category] || '#6b7280';
-                  return (
-                    <div key={cat.category}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: catColor }} />
-                          <span className="text-xs text-gray-300 truncate">{cat.category}</span>
-                        </div>
-                        <span className={`text-xs font-bold flex-shrink-0 ml-2 ${textColor}`}>
-                          {cat.avgScore.toFixed(1)}
-                        </span>
-                      </div>
-                      <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all duration-700"
-                          style={{ width: `${pct}%`, backgroundColor: barColor }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Grade Distribution */}
-          {data.members.length > 0 && (
-            <div className="bg-[#12121a] border border-white/[0.06] rounded-2xl p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Trophy className="w-4 h-4 text-amber-400" />
-                <h3 className="text-sm font-semibold text-white">Sebaran Grade</h3>
-              </div>
-              <div className="grid grid-cols-4 gap-2">
-                {['A', 'B', 'C', 'D'].map((grade) => {
-                  const count = gradeCount[grade] || 0;
-                  const gradeColors: Record<string, string> = {
-                    A: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
-                    B: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
-                    C: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
-                    D: 'text-red-400 bg-red-500/10 border-red-500/20',
-                  };
-                  return (
-                    <div key={grade} className={`border rounded-xl p-3 text-center ${gradeColors[grade]}`}>
-                      <p className="text-lg font-bold">{count}</p>
-                      <p className="text-[10px] font-semibold opacity-80">Grade {grade}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+        {/* Pie Chart */}
+        <div>
+          {categoryPieData.length > 0 && (
+            <KpiPieChart
+              data={categoryPieData}
+              title="Skor per Kategori"
+              centerLabel="Rata-rata"
+              centerValue={data.averageScore.toString()}
+            />
           )}
         </div>
       </div>

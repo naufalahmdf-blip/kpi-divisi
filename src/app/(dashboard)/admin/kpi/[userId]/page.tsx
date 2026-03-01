@@ -1,34 +1,19 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Save, Loader2, Target, CheckCircle2, AlertCircle, Calendar, CalendarDays, Info, ArrowLeft, CalendarCheck, ExternalLink, RefreshCw, X, CheckCircle, XCircle, Calculator } from 'lucide-react';
+import { Save, Loader2, Target, CheckCircle2, AlertCircle, Calendar, CalendarDays, Info, ArrowLeft } from 'lucide-react';
 import PeriodSelector from '@/components/PeriodSelector';
-
+import KpiPieChart from '@/components/KpiPieChart';
 import { useToast } from '@/components/Toast';
-import VideoPointCalculator, { isVideoOutputTemplate } from '@/components/VideoPointCalculator';
-import { cn, calculateAchievement, calculateWeightedScore, getGrade, getGradeColor, getGradeBg, formatPercent, getMonthName, getCurrentPeriod, getWeeksInMonth, getEffectiveTarget } from '@/lib/utils';
-import { calculateAttendanceScore, calculateFinalScore, getAttendanceRates, type AttendanceEntry } from '@/lib/attendance';
+import { cn, calculateAchievement, calculateWeightedScore, getGrade, getGradeColor, getGradeBg, formatPercent, getMonthName, getCurrentPeriod } from '@/lib/utils';
 
 const CATEGORY_COLORS: Record<string, string> = {
   Productivity: '#2A62FF',
   Efficiency: '#3b82f6',
   Quality: '#10b981',
   'Creative Development': '#f59e0b',
-  Speed: '#8b5cf6',
-  Accuracy: '#ef4444',
-  Authority: '#06b6d4',
-  Volume: '#f97316',
-  Lead: '#ec4899',
-  Followers: '#14b8a6',
-  Security: '#dc2626',
-  Recruitment: '#7c3aed',
-  Retention: '#0ea5e9',
-  Compliance: '#fb923c',
-  Engagement: '#a855f7',
-  Culture: '#d946ef',
-  Absensi: '#22c55e',
 };
 
 interface Template {
@@ -40,7 +25,6 @@ interface Template {
   unit: string;
   formula_type: 'higher_better' | 'lower_better';
   sort_order: number;
-  denominator_template_id: string | null;
 }
 
 interface Entry {
@@ -57,7 +41,7 @@ export default function AdminKpiEditPage() {
   const { toast } = useToast();
   const currentPeriod = getCurrentPeriod();
 
-  const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('monthly');
+  const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('weekly');
   const [year, setYear] = useState(parseInt(searchParams.get('year') || currentPeriod.year.toString()));
   const [month, setMonth] = useState(parseInt(searchParams.get('month') || currentPeriod.month.toString()));
   const [week, setWeek] = useState(parseInt(searchParams.get('week') || currentPeriod.week.toString()));
@@ -72,25 +56,12 @@ export default function AdminKpiEditPage() {
   const [divisionName, setDivisionName] = useState('');
   const [divisionId, setDivisionId] = useState('');
   const [isAggregated, setIsAggregated] = useState(false);
-  const [attendance, setAttendance] = useState<AttendanceEntry | null>(null);
-  const [trelloOtd, setTrelloOtd] = useState<{ otdPercentage: number; onTime: number; late: number; total: number } | null>(null);
-  const [trelloRefreshing, setTrelloRefreshing] = useState(false);
-  const [trelloDetails, setTrelloDetails] = useState<{ name: string; list: string; board: string; due: string; completed: string; is_on_time: boolean; original_due: string | null; due_changed: boolean; members: string[] }[]>([]);
-  const [showTrelloDetail, setShowTrelloDetail] = useState(false);
-  const [showVideoCalc, setShowVideoCalc] = useState(false);
-  const [videoCalcTemplateId, setVideoCalcTemplateId] = useState('');
-
-  const isOtdTemplate = (t: { kpi_name: string }) => {
-    const name = t.kpi_name.toLowerCase();
-    return name.includes('on-time delivery') || name.includes('on time delivery') || name.includes('otd');
-  };
 
   const backUrl = divisionId ? `/admin/divisi/${divisionId}` : '/admin/divisi';
 
   const fetchKpi = useCallback(async () => {
     setLoading(true);
     setSaved(false);
-    setTrelloDetails([]);
     try {
       const params = new URLSearchParams({
         user_id: userId,
@@ -124,42 +95,8 @@ export default function AdminKpiEditPage() {
           weeksMap[e.template_id] = e.weeks_filled;
         }
       });
-      // Auto-fill OTD from Trello
-      const trelloData = json.trello_otd ?? null;
-      setTrelloOtd(trelloData);
-      const divId = json.user?.division_id || '';
-      const fullName = json.user?.full_name || '';
-      if (trelloData && divId) {
-        // Eagerly load card details for per-user filtering
-        try {
-          const detailParams = new URLSearchParams({ division_id: divId, year: year.toString(), month: month.toString() });
-          const detailRes = await fetch(`/api/trello/otd?${detailParams}`);
-          if (detailRes.ok) {
-            const detailData = await detailRes.json();
-            const details = detailData.details || [];
-            setTrelloDetails(details);
-            // Filter by user name and compute per-user OTD
-            const nameLower = fullName.toLowerCase();
-            const otdTpl = (json.templates || []).find((t: Template) => isOtdTemplate(t));
-            if (otdTpl && nameLower) {
-              const userCards = details.filter((card: { members: string[] }) =>
-                card.members.some((m: string) => {
-                  const ml = m.toLowerCase();
-                  return ml.includes(nameLower) || nameLower.includes(ml);
-                })
-              );
-              const onTime = userCards.filter((c: { is_on_time: boolean }) => c.is_on_time).length;
-              const total = userCards.length;
-              const pct = total > 0 ? Math.round((onTime / total) * 10000) / 100 : 0;
-              entryMap[otdTpl.id] = { actual_value: String(pct), notes: entryMap[otdTpl.id]?.notes || '' };
-            }
-          }
-        } catch { /* ignore */ }
-      }
-
       setEntries(entryMap);
       setWeeksFilled(weeksMap);
-      setAttendance(json.attendance ?? null);
     } catch {
       setError('Gagal memuat data KPI');
     } finally {
@@ -225,127 +162,33 @@ export default function AdminKpiEditPage() {
     }));
   };
 
-  const weeksInMonth = getWeeksInMonth();
-  const isRate = (t: Template) => !!t.denominator_template_id;
-
-  // Compute raw actuals from entries
-  const rawActuals: Record<string, number> = {};
-  for (const t of templates) {
-    rawActuals[t.id] = parseFloat(entries[t.id]?.actual_value) || 0;
-  }
-  // Compute rate display values (raw / denominator as plain ratio)
-  const rateDisplayValues: Record<string, number> = {};
-  for (const t of templates) {
-    if (isRate(t)) {
-      const num = rawActuals[t.id];
-      const den = rawActuals[t.denominator_template_id!] ?? 0;
-      rateDisplayValues[t.id] = den === 0 ? 0 : Math.round((num / den) * 100) / 100;
-    }
-  }
-
   const scores = templates.map((t) => {
-    const actual = isRate(t) ? rateDisplayValues[t.id] : rawActuals[t.id];
-    const rawInput = rawActuals[t.id];
-    const effectiveTarget = getEffectiveTarget(t.target, t.formula_type, viewMode, weeksInMonth, isRate(t), isOtdTemplate(t));
-    const achievement = calculateAchievement(actual, effectiveTarget, t.formula_type);
+    const actual = parseFloat(entries[t.id]?.actual_value) || 0;
+    const achievement = calculateAchievement(actual, t.target, t.formula_type);
     const weighted = calculateWeightedScore(achievement, t.weight);
-    const denominator = isRate(t) ? (rawActuals[t.denominator_template_id!] ?? 0) : 0;
-    return { ...t, actual, rawInput, denominator, achievement, weighted, effectiveTarget };
+    return { ...t, actual, achievement, weighted };
   });
 
-  const kpiTotal = scores.reduce((sum, s) => sum + s.weighted, 0);
-  const attendanceScore = viewMode === 'monthly' ? calculateAttendanceScore(attendance) : 0;
-  const finalTotal = viewMode === 'monthly' ? calculateFinalScore(kpiTotal, attendanceScore) : kpiTotal;
-  const grade = getGrade(finalTotal, viewMode === 'monthly' ? 120 : 100);
-  const roundedTotal = Math.round(finalTotal * 100) / 100;
-  const { attendanceRate, tepatWaktuRate } = getAttendanceRates(viewMode === 'monthly' ? attendance : null);
-  const kehadiranScore = Math.min(attendanceRate / 90, 1) * 15;
-  const tepatWaktuScore = Math.min(tepatWaktuRate / 95, 1) * 5;
+  const totalScore = scores.reduce((sum, s) => sum + s.weighted, 0);
+  const grade = getGrade(totalScore);
+  const roundedTotal = Math.round(totalScore * 100) / 100;
+
+  const categoryData = Object.entries(
+    scores.reduce((acc, s) => {
+      acc[s.category] = (acc[s.category] || 0) + s.weighted;
+      return acc;
+    }, {} as Record<string, number>)
+  ).map(([name, value]) => ({
+    name,
+    value: Math.round(value * 100) / 100,
+    color: CATEGORY_COLORS[name] || '#6b7280',
+  }));
 
   const handlePeriodChange = (values: { periodType?: string; year?: number; month?: number; week?: number }) => {
     if (values.year) setYear(values.year);
     if (values.month) setMonth(values.month);
     if (values.week) setWeek(values.week);
   };
-
-  const refreshTrelloOtd = async () => {
-    if (!divisionId) return;
-    setTrelloRefreshing(true);
-    try {
-      const res = await fetch(`/api/trello/otd?division_id=${divisionId}&year=${year}&month=${month}`);
-      if (res.ok) {
-        const json = await res.json();
-        const newOtd = { otdPercentage: json.otd_percentage, onTime: json.on_time, late: json.late, total: json.total };
-        setTrelloOtd(newOtd);
-        const details = json.details || [];
-        setTrelloDetails(details);
-        // Compute per-user OTD
-        const otdTpl = templates.find((t) => isOtdTemplate(t));
-        if (otdTpl && userName) {
-          const nameLower = userName.toLowerCase();
-          const userCards = details.filter((card: { members: string[] }) =>
-            card.members.some((m: string) => {
-              const ml = m.toLowerCase();
-              return ml.includes(nameLower) || nameLower.includes(ml);
-            })
-          );
-          const onTime = userCards.filter((c: { is_on_time: boolean }) => c.is_on_time).length;
-          const total = userCards.length;
-          const pct = total > 0 ? Math.round((onTime / total) * 10000) / 100 : 0;
-          setEntries((prev) => ({
-            ...prev,
-            [otdTpl.id]: { actual_value: String(pct), notes: prev[otdTpl.id]?.notes || '' },
-          }));
-        }
-        toast('Data Trello OTD berhasil diperbarui', 'success');
-      } else {
-        toast('Gagal mengambil data Trello', 'error');
-      }
-    } catch {
-      toast('Gagal mengambil data Trello', 'error');
-    } finally {
-      setTrelloRefreshing(false);
-    }
-  };
-
-  const openTrelloDetail = async () => {
-    if (!divisionId) return;
-    setShowTrelloDetail(true);
-    if (trelloDetails.length === 0) {
-      try {
-        const params = new URLSearchParams({ division_id: divisionId, year: year.toString(), month: month.toString() });
-        const res = await fetch(`/api/trello/otd?${params}`);
-        if (res.ok) {
-          const data = await res.json();
-          setTrelloDetails(data.details || []);
-        }
-      } catch { /* ignore */ }
-    }
-  };
-
-  const userTrelloDetails = useMemo(() => {
-    if (!userName || trelloDetails.length === 0) return trelloDetails;
-    const nameLower = userName.toLowerCase();
-    return trelloDetails.filter(card =>
-      card.members.some(m => {
-        const ml = m.toLowerCase();
-        return ml.includes(nameLower) || nameLower.includes(ml);
-      })
-    );
-  }, [trelloDetails, userName]);
-
-  const userTrelloOtd = useMemo(() => {
-    if (!trelloOtd || !userName || trelloDetails.length === 0) return trelloOtd;
-    const onTime = userTrelloDetails.filter(c => c.is_on_time).length;
-    const total = userTrelloDetails.length;
-    return {
-      ...trelloOtd,
-      total,
-      onTime,
-      late: total - onTime,
-      otdPercentage: total > 0 ? Math.round((onTime / total) * 10000) / 100 : 0,
-    };
-  }, [trelloOtd, userTrelloDetails, userName, trelloDetails]);
 
   const periodLabel = viewMode === 'monthly'
     ? `${getMonthName(month)} ${year}`
@@ -365,48 +208,44 @@ export default function AdminKpiEditPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="space-y-3 sm:space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-          <div>
-            <Link href={backUrl} className="inline-flex items-center gap-1.5 text-xs sm:text-sm text-gray-500 hover:text-white transition-colors mb-2">
-              <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              Kembali
-            </Link>
-            <div className="flex items-center gap-3">
-              <Target className="w-6 h-6 sm:w-7 sm:h-7 text-brand-300 flex-shrink-0" />
-              <div>
-                <h1 className="text-xl sm:text-2xl font-bold text-white">Edit KPI</h1>
-                <p className="text-gray-500 text-xs sm:text-sm">
-                  {userName} &middot; {divisionName} &middot; {periodLabel}
-                </p>
-              </div>
-            </div>
-          </div>
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <Link href={backUrl} className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors mb-2">
+            <ArrowLeft className="w-4 h-4" />
+            Kembali
+          </Link>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <Target className="w-7 h-7 text-brand-300" />
+            Edit KPI
+          </h1>
+          <p className="text-gray-500 text-sm mt-1">
+            {userName} &middot; {divisionName} &middot; {periodLabel}
+          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 sm:gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center bg-white/[0.04] border border-white/[0.08] rounded-xl p-1">
             <button
               onClick={() => setViewMode('weekly')}
               className={cn(
-                'flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all',
+                'flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all',
                 viewMode === 'weekly'
                   ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/25'
                   : 'text-gray-400 hover:text-white'
               )}
             >
-              <Calendar className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              <Calendar className="w-3.5 h-3.5" />
               Mingguan
             </button>
             <button
               onClick={() => setViewMode('monthly')}
               className={cn(
-                'flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all',
+                'flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all',
                 viewMode === 'monthly'
                   ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/25'
                   : 'text-gray-400 hover:text-white'
               )}
             >
-              <CalendarDays className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              <CalendarDays className="w-3.5 h-3.5" />
               Bulanan
             </button>
           </div>
@@ -450,8 +289,8 @@ export default function AdminKpiEditPage() {
       ) : (
         <>
           {/* Score Summary */}
-          <div className={cn('grid grid-cols-1 gap-6', viewMode === 'monthly' && 'lg:grid-cols-3')}>
-            <div className={viewMode === 'monthly' ? 'lg:col-span-2' : ''}>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
               <div className="bg-[#12121a] border border-white/[0.06] rounded-2xl p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-semibold text-gray-400">
@@ -481,77 +320,13 @@ export default function AdminKpiEditPage() {
               </div>
             </div>
 
-            {viewMode === 'monthly' && (
-              <div className="bg-[#12121a] border border-white/[0.06] rounded-2xl p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <CalendarCheck className="w-4 h-4 text-green-400" />
-                  <h3 className="text-sm font-semibold text-gray-400">Absensi</h3>
-                  {!attendance && (
-                    <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                      Belum Diisi
-                    </span>
-                  )}
-                </div>
-                {attendance ? (
-                  <>
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        {
-                          label: 'Kehadiran',
-                          target: '≥ 90%',
-                          displayValue: `${attendanceRate.toFixed(1)}%`,
-                          perf: Math.min(attendanceRate / 90, 1) * 100,
-                          color: attendanceRate >= 90 ? '#22c55e' : attendanceRate >= 70 ? '#f59e0b' : '#ef4444',
-                          pts: `${kehadiranScore.toFixed(1)}/15`,
-                        },
-                        {
-                          label: 'Tepat Waktu',
-                          target: '≥ 95%',
-                          displayValue: `${tepatWaktuRate.toFixed(1)}%`,
-                          perf: Math.min(tepatWaktuRate / 95, 1) * 100,
-                          color: tepatWaktuRate >= 95 ? '#22c55e' : tepatWaktuRate >= 80 ? '#f59e0b' : '#ef4444',
-                          pts: `${tepatWaktuScore.toFixed(1)}/5`,
-                        },
-                      ].map((item) => (
-                        <div key={item.label} className="flex flex-col items-center gap-2">
-                          <div className="relative" style={{ width: 90, height: 90 }}>
-                            <svg viewBox="0 0 36 36" style={{ width: 90, height: 90, transform: 'rotate(-90deg)' }}>
-                              <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
-                              <circle
-                                cx="18" cy="18" r="15.9"
-                                fill="none"
-                                stroke={item.color}
-                                strokeWidth="3"
-                                strokeDasharray={`${item.perf.toFixed(2)} ${(100 - item.perf).toFixed(2)}`}
-                                strokeLinecap="round"
-                              />
-                            </svg>
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <span className="text-sm font-bold text-white">{item.displayValue}</span>
-                            </div>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-xs font-medium text-gray-300">{item.label}</p>
-                            <p className="text-[10px] text-gray-500">Target {item.target}</p>
-                            <p className="text-xs font-bold mt-0.5" style={{ color: item.color }}>{item.pts} pts</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between">
-                      <span className="text-xs text-gray-500">Total Absensi</span>
-                      <div>
-                        <span className="text-sm font-bold text-green-400">{attendanceScore.toFixed(1)}</span>
-                        <span className="text-xs text-gray-500">/20 pts</span>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-center py-4">
-                    <p className="text-xs text-gray-500">Data absensi belum diisi</p>
-                  </div>
-                )}
-              </div>
+            {categoryData.length > 0 && (
+              <KpiPieChart
+                data={categoryData}
+                title="Skor per Kategori"
+                centerLabel="Total"
+                centerValue={roundedTotal.toString()}
+              />
             )}
           </div>
 
@@ -629,74 +404,22 @@ export default function AdminKpiEditPage() {
                       </td>
                       <td className="px-6 py-3 text-sm text-white font-medium">{s.kpi_name}</td>
                       <td className="px-4 py-3 text-center text-sm text-gray-400">{s.weight}%</td>
-                      <td className="px-4 py-3 text-center text-sm text-gray-400">{s.effectiveTarget}</td>
+                      <td className="px-4 py-3 text-center text-sm text-gray-400">{s.target}</td>
                       <td className="px-4 py-3 text-center text-xs text-gray-500">{s.unit}</td>
                       <td className="px-4 py-3">
                         {isAggregated ? (
                           <div className="text-center text-sm font-medium text-white">
-                            {isRate(s) ? (
-                              <div>
-                                <span>{s.rawInput.toFixed(0)}</span>
-                                <span className="text-sm text-gray-500 ml-1">÷ {s.denominator.toFixed(0)}</span>
-                                <span className="text-sm text-brand-400 ml-1">= {s.actual.toFixed(2)}</span>
-                              </div>
-                            ) : isOtdTemplate(s) && userTrelloOtd ? (
-                              <div className="flex flex-col items-center gap-0.5">
-                                <span>{s.actual.toFixed(1)}%</span>
-                                <div className="flex items-center gap-1.5">
-                                  <button type="button" onClick={openTrelloDetail} className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1">
-                                    Trello: {userTrelloOtd.onTime}/{userTrelloOtd.total} on-time <ExternalLink className="w-3 h-3" />
-                                  </button>
-                                  <button type="button" onClick={refreshTrelloOtd} disabled={trelloRefreshing} className="text-blue-400 hover:text-blue-300 transition-colors">
-                                    <RefreshCw className={cn('w-3 h-3', trelloRefreshing && 'animate-spin')} />
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              s.actual.toFixed(s.formula_type === 'lower_better' ? 2 : 0)
-                            )}
+                            {s.actual.toFixed(s.formula_type === 'lower_better' ? 2 : 0)}
                           </div>
                         ) : (
-                          <div className="flex flex-col items-center gap-0.5">
-                            {isOtdTemplate(s) && userTrelloOtd ? (
-                              <>
-                                <div className="w-24 mx-auto px-3 py-1.5 bg-blue-500/[0.08] border border-blue-500/20 rounded-lg text-center text-sm text-white font-medium">
-                                  {userTrelloOtd.otdPercentage}
-                                </div>
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                  <button type="button" onClick={openTrelloDetail} className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1">
-                                    Trello: {userTrelloOtd.onTime}/{userTrelloOtd.total} on-time <ExternalLink className="w-3 h-3" />
-                                  </button>
-                                  <button type="button" onClick={refreshTrelloOtd} disabled={trelloRefreshing} className="text-blue-400 hover:text-blue-300 transition-colors">
-                                    <RefreshCw className={cn('w-3 h-3', trelloRefreshing && 'animate-spin')} />
-                                  </button>
-                                </div>
-                              </>
-                            ) : (
-                              <>
-                                <input
-                                  type="number"
-                                  step="any"
-                                  value={entries[s.id]?.actual_value ?? ''}
-                                  onChange={(e) => updateEntry(s.id, 'actual_value', e.target.value)}
-                                  className="w-24 mx-auto block px-3 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-center text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors"
-                                  placeholder="0"
-                                />
-                                {isVideoOutputTemplate(s) && (
-                                  <button
-                                    type="button"
-                                    onClick={() => { setVideoCalcTemplateId(s.id); setShowVideoCalc(true); }}
-                                    className="text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors"
-                                  >
-                                    <Calculator className="w-3 h-3" /> Kalkulator Poin
-                                  </button>
-                                )}
-                                {isRate(s) && s.rawInput > 0 && (
-                                  <span className="text-sm text-brand-400">{s.rawInput.toFixed(0)} ÷ {s.denominator.toFixed(0)} = {s.actual.toFixed(2)}</span>
-                                )}
-                              </>
-                            )}
-                          </div>
+                          <input
+                            type="number"
+                            step="any"
+                            value={entries[s.id]?.actual_value ?? ''}
+                            onChange={(e) => updateEntry(s.id, 'actual_value', e.target.value)}
+                            className="w-24 mx-auto block px-3 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-center text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors"
+                            placeholder="0"
+                          />
                         )}
                       </td>
                       <td className="px-4 py-3 text-center">
@@ -730,18 +453,7 @@ export default function AdminKpiEditPage() {
                 </tbody>
                 <tfoot>
                   <tr className="bg-white/[0.02]">
-                    <td colSpan={7} className="px-6 py-4 text-right">
-                      {viewMode === 'monthly' ? (
-                        <div>
-                          <span className="text-sm font-semibold text-gray-400">Final Skor</span>
-                          <span className="ml-2 text-xs text-gray-600">
-                            (KPI {kpiTotal.toFixed(1)} + Absensi {attendanceScore.toFixed(1)}) / 120
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-sm font-semibold text-gray-400">Total Skor</span>
-                      )}
-                    </td>
+                    <td colSpan={7} className="px-6 py-4 text-right text-sm font-semibold text-gray-400">Total Skor</td>
                     <td className="px-4 py-4 text-center">
                       <span className={cn('text-lg font-bold', getGradeColor(grade))}>{roundedTotal}</span>
                     </td>
@@ -755,224 +467,8 @@ export default function AdminKpiEditPage() {
               </table>
             </div>
           </div>
-
-          {/* Attendance Section - Monthly only (read-only for admin, edit via /admin/absensi) */}
-          {viewMode === 'monthly' && (
-            <div className="bg-[#12121a] border border-white/[0.06] rounded-2xl overflow-hidden">
-              <div className="p-5 border-b border-white/[0.06] flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <CalendarCheck className="w-4 h-4 text-green-400" />
-                  <h3 className="text-sm font-semibold text-gray-400">Absensi Bulan Ini</h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  {!attendance && (
-                    <span className="text-xs px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                      Belum Diisi
-                    </span>
-                  )}
-                  <Link
-                    href={`/admin/absensi?year=${year}&month=${month}`}
-                    className="inline-flex items-center gap-1.5 text-xs text-brand-400 hover:text-brand-300 transition-colors"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    Edit Absensi
-                  </Link>
-                </div>
-              </div>
-
-              {attendance ? (
-                <div className="p-5 space-y-4">
-                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
-                    {[
-                      { label: 'Hari Kerja', value: attendance.hari_kerja },
-                      { label: 'Hadir', value: attendance.hadir },
-                      { label: 'Terlambat', value: attendance.terlambat },
-                      { label: 'Sakit', value: attendance.sakit },
-                      { label: 'Cuti', value: attendance.cuti },
-                    ].map((item) => (
-                      <div key={item.label} className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 text-center">
-                        <div className="text-xl font-bold text-white">{item.value}</div>
-                        <div className="text-xs text-gray-500 mt-0.5">{item.label}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="bg-green-500/[0.06] border border-green-500/20 rounded-xl p-4 flex items-center justify-between">
-                    <div>
-                      <span className="text-sm font-semibold text-white">Total Absensi Score</span>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        KPI {kpiTotal.toFixed(1)} + Absensi {attendanceScore.toFixed(1)} = Final {roundedTotal} / 120
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-2xl font-bold text-green-400">{attendanceScore.toFixed(1)}</span>
-                      <span className="text-sm font-normal text-gray-500">/20 pts</span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-8 text-center">
-                  <CalendarCheck className="w-10 h-10 text-gray-600 mx-auto mb-2" />
-                  <p className="text-sm text-gray-500">Data absensi bulan ini belum diisi.</p>
-                  <Link
-                    href={`/admin/absensi?year=${year}&month=${month}`}
-                    className="inline-flex items-center gap-1.5 mt-3 text-xs text-brand-400 hover:text-brand-300 transition-colors"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    Isi Absensi Sekarang
-                  </Link>
-                </div>
-              )}
-            </div>
-          )}
         </>
       )}
-
-      {/* Trello OTD Detail Modal */}
-      {showTrelloDetail && userTrelloOtd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowTrelloDetail(false)}>
-          <div
-            className="bg-[#16161e] border border-white/[0.08] rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl shadow-black/50 animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="p-5 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
-              <div>
-                <h2 className="text-lg font-bold text-white">Trello OTD Detail</h2>
-                <p className="text-xs text-gray-500 mt-0.5">{userName} — {divisionName} — {getMonthName(month)} {year}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={async () => { await refreshTrelloOtd(); setTrelloDetails([]); const params = new URLSearchParams({ division_id: divisionId, year: year.toString(), month: month.toString() }); try { const res = await fetch(`/api/trello/otd?${params}`); if (res.ok) { const data = await res.json(); setTrelloDetails(data.details || []); } } catch {} }}
-                  disabled={trelloRefreshing}
-                  className="text-gray-400 hover:text-white transition-colors p-1"
-                >
-                  <RefreshCw className={cn('w-4 h-4', trelloRefreshing && 'animate-spin')} />
-                </button>
-                <button onClick={() => setShowTrelloDetail(false)} className="text-gray-500 hover:text-white transition-colors p-1">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* KPI Summary */}
-            <div className="grid grid-cols-4 gap-3 p-5 border-b border-white/[0.06] flex-shrink-0">
-              <div className="bg-blue-500/[0.08] border border-blue-500/20 rounded-xl p-3 text-center">
-                <p className="text-[10px] text-blue-400 font-semibold uppercase tracking-wider">Total Card</p>
-                <p className="text-2xl font-bold text-blue-400 mt-1">{userTrelloOtd.total}</p>
-              </div>
-              <div className="bg-emerald-500/[0.08] border border-emerald-500/20 rounded-xl p-3 text-center">
-                <p className="text-[10px] text-emerald-400 font-semibold uppercase tracking-wider">On Time</p>
-                <p className="text-2xl font-bold text-emerald-400 mt-1">{userTrelloOtd.onTime}</p>
-              </div>
-              <div className="bg-red-500/[0.08] border border-red-500/20 rounded-xl p-3 text-center">
-                <p className="text-[10px] text-red-400 font-semibold uppercase tracking-wider">Terlambat</p>
-                <p className="text-2xl font-bold text-red-400 mt-1">{userTrelloOtd.late}</p>
-              </div>
-              <div className={cn(
-                "border rounded-xl p-3 text-center",
-                userTrelloOtd.otdPercentage >= 80 ? "bg-emerald-500/[0.08] border-emerald-500/20" :
-                userTrelloOtd.otdPercentage >= 60 ? "bg-amber-500/[0.08] border-amber-500/20" :
-                "bg-red-500/[0.08] border-red-500/20"
-              )}>
-                <p className={cn(
-                  "text-[10px] font-semibold uppercase tracking-wider",
-                  userTrelloOtd.otdPercentage >= 80 ? "text-emerald-400" : userTrelloOtd.otdPercentage >= 60 ? "text-amber-400" : "text-red-400"
-                )}>% OTD</p>
-                <p className={cn(
-                  "text-2xl font-bold mt-1",
-                  userTrelloOtd.otdPercentage >= 80 ? "text-emerald-400" : userTrelloOtd.otdPercentage >= 60 ? "text-amber-400" : "text-red-400"
-                )}>{userTrelloOtd.otdPercentage}%</p>
-              </div>
-            </div>
-
-            {/* Card Table */}
-            <div className="overflow-auto flex-1">
-              {trelloDetails.length === 0 ? (
-                <div className="p-12 text-center">
-                  <Loader2 className="w-6 h-6 text-gray-500 animate-spin mx-auto mb-2" />
-                  <p className="text-gray-500 text-sm">Memuat detail card...</p>
-                </div>
-              ) : userTrelloDetails.length === 0 ? (
-                <div className="p-12 text-center text-gray-500 text-sm">Tidak ada card untuk {userName}</div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-white/[0.06]">
-                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Card</th>
-                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Member</th>
-                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Board</th>
-                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">List</th>
-                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Due Date</th>
-                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Tgl Aktivitas</th>
-                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Selisih</th>
-                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {userTrelloDetails
-                      .sort((a, b) => new Date(b.due).getTime() - new Date(a.due).getTime())
-                      .map((card, i) => {
-                        const due = new Date(card.due);
-                        const act = new Date(card.completed);
-                        const diffDays = Math.ceil((act.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
-                        const origDue = card.original_due ? new Date(card.original_due) : null;
-                        return (
-                          <tr key={i} className={cn('border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors', card.due_changed && 'bg-amber-500/[0.03]')}>
-                            <td className="px-4 py-3 text-white font-medium max-w-[200px] truncate">{card.name}</td>
-                            <td className="px-4 py-3 text-gray-400 text-xs max-w-[150px]">
-                              {card.members && card.members.length > 0 ? card.members.join(', ') : <span className="text-gray-600">-</span>}
-                            </td>
-                            <td className="px-4 py-3 text-gray-500 text-xs max-w-[120px] truncate">{card.board}</td>
-                            <td className="px-4 py-3 text-gray-500">{card.list}</td>
-                            <td className="px-4 py-3 text-center">
-                              <div className="text-gray-400">{due.toLocaleDateString('id-ID')}</div>
-                              {card.due_changed && origDue && (
-                                <div className="text-[10px] text-amber-400 flex items-center justify-center gap-0.5 mt-0.5" title={`Due date awal: ${origDue.toLocaleDateString('id-ID')}`}>
-                                  <AlertCircle className="w-2.5 h-2.5" />
-                                  <span>awal: {origDue.toLocaleDateString('id-ID')}</span>
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-center text-gray-400">{act.toLocaleDateString('id-ID')}</td>
-                            <td className="px-4 py-3 text-center">
-                              <span className={cn('font-semibold', card.is_on_time ? 'text-emerald-400' : 'text-red-400')}>
-                                {diffDays <= 1 ? `${diffDays}d` : `+${diffDays}d`}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <span className={cn(
-                                'inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg',
-                                card.is_on_time ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                              )}>
-                                {card.is_on_time ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                                {card.is_on_time ? 'ON TIME' : 'TERLAMBAT'}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <VideoPointCalculator
-        open={showVideoCalc}
-        onClose={() => setShowVideoCalc(false)}
-        initialBreakdown={entries[videoCalcTemplateId]?.notes || ''}
-        onApply={(total, breakdown) => {
-          if (videoCalcTemplateId) {
-            setEntries((prev) => ({
-              ...prev,
-              [videoCalcTemplateId]: { actual_value: String(total), notes: breakdown },
-            }));
-          }
-        }}
-      />
     </div>
   );
 }

@@ -17,12 +17,10 @@ export function calculateAchievement(
     return 0;
   }
 
-  if (actual === 0) return 0;
-
   if (formulaType === 'higher_better') {
-    return actual / target; // no cap — exceeding target gives > 100%
+    return Math.min(actual / target, 1);
   } else {
-    // lower_better: capped at 1 (can't do better than perfect)
+    // lower_better
     if (actual <= target) return 1;
     return target / actual;
   }
@@ -32,41 +30,10 @@ export function calculateWeightedScore(achievement: number, weight: number): num
   return achievement * weight;
 }
 
-/** Fixed 4 weeks per month. Week 1: 1-7, Week 2: 8-14, Week 3: 15-21, Week 4: 22-end */
-export function getWeeksInMonth(): number {
-  return 4;
-}
-
-/**
- * For higher_better KPIs in weekly view, divide target by weeksInMonth.
- * lower_better targets stay the same (averaged, not summed).
- * Rate KPI targets are percentages — never divided by weeks.
- */
-export function getEffectiveTarget(
-  target: number,
-  formulaType: string,
-  periodType: string,
-  weeksInMonth: number,
-  isRate: boolean = false,
-  isFixedTarget: boolean = false
-): number {
-  if (isRate || isFixedTarget) return target;
-  if (periodType === 'weekly' && formulaType === 'higher_better' && weeksInMonth > 0) {
-    return Math.round((target / weeksInMonth) * 100) / 100;
-  }
-  return target;
-}
-
-/**
- * Grade based on percentage of max score.
- * @param score  Raw score (e.g. 0–100 for KPI-only, 0–120 for KPI+Absensi)
- * @param max    Maximum possible score (default 100)
- */
-export function getGrade(score: number, max: number = 100): string {
-  const pct = (score / max) * 100;
-  if (pct >= 90) return 'A';
-  if (pct >= 80) return 'B';
-  if (pct >= 70) return 'C';
+export function getGrade(totalScore: number): string {
+  if (totalScore >= 90) return 'A';
+  if (totalScore >= 80) return 'B';
+  if (totalScore >= 70) return 'C';
   return 'D';
 }
 
@@ -107,6 +74,6 @@ export function getCurrentPeriod() {
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
   const day = now.getDate();
-  const week = Math.min(Math.ceil(day / 7), 4);
+  const week = Math.ceil(day / 7);
   return { year, month, week };
 }

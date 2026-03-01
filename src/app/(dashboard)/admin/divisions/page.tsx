@@ -9,7 +9,6 @@ interface Division {
   id: string;
   name: string;
   slug: string;
-  trello_board_id?: string | null;
   user_count?: number;
 }
 
@@ -29,7 +28,6 @@ export default function DivisionsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
-  const [trelloBoardId, setTrelloBoardId] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
@@ -75,7 +73,6 @@ export default function DivisionsPage() {
 
   const resetForm = () => {
     setName('');
-    setTrelloBoardId('');
     setEditingId(null);
     setShowForm(false);
     setError('');
@@ -83,7 +80,6 @@ export default function DivisionsPage() {
 
   const handleEdit = (div: Division) => {
     setName(div.name);
-    setTrelloBoardId(div.trello_board_id || '');
     setEditingId(div.id);
     setShowForm(true);
   };
@@ -95,9 +91,7 @@ export default function DivisionsPage() {
 
     try {
       const method = editingId ? 'PUT' : 'POST';
-      const body = editingId
-        ? { id: editingId, name, trello_board_id: trelloBoardId }
-        : { name, trello_board_id: trelloBoardId };
+      const body = editingId ? { id: editingId, name } : { name };
 
       const res = await fetch('/api/admin/divisions', {
         method,
@@ -225,22 +219,6 @@ export default function DivisionsPage() {
                   </p>
                 )}
               </div>
-
-              {/* Trello Integration */}
-              <div className="border-t border-white/[0.06] pt-4">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Trello Integration (Opsional)</p>
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1">Board ID (bisa lebih dari 1, pisah koma)</label>
-                  <input
-                    type="text"
-                    value={trelloBoardId}
-                    onChange={(e) => setTrelloBoardId(e.target.value)}
-                    placeholder="abc123 atau abc123,def456"
-                    className="w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-white text-xs font-mono focus:outline-none focus:border-brand-400/50 placeholder:text-gray-600"
-                  />
-                  <p className="text-[10px] text-gray-600 mt-1">Board ID dari URL: trello.com/b/<span className="text-gray-400">BOARD_ID</span>/nama. Untuk multiple board pisah dengan koma.</p>
-                </div>
-              </div>
               <div className="flex gap-3">
                 <button
                   type="button"
@@ -304,14 +282,9 @@ export default function DivisionsPage() {
                   <div className="flex-1 min-w-0">
                     <h3 className="text-base font-semibold text-white truncate">{d.name}</h3>
                     <p className="text-xs text-gray-500 font-mono mt-0.5">{d.slug}</p>
-                    <div className="flex items-center gap-3 mt-2.5">
-                      <div className="flex items-center gap-1.5">
-                        <Users className="w-3.5 h-3.5 text-gray-500" />
-                        <span className="text-xs text-gray-400">{d.user_count || 0} anggota</span>
-                      </div>
-                      {d.trello_board_id && (
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">Trello</span>
-                      )}
+                    <div className="flex items-center gap-1.5 mt-2.5">
+                      <Users className="w-3.5 h-3.5 text-gray-500" />
+                      <span className="text-xs text-gray-400">{d.user_count || 0} anggota</span>
                     </div>
                   </div>
                 </div>

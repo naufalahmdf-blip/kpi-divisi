@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
-import { logActivity, getClientIp } from '@/lib/activity-log';
 
 export async function GET(request: NextRequest) {
   const user = await getSession();
@@ -42,13 +41,6 @@ export async function POST(request: NextRequest) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    await logActivity({
-      userId: user.id, userName: user.full_name, userEmail: user.email,
-      action: 'CREATE', entityType: 'KPI_TEMPLATE', entityId: data.id,
-      details: { kpi_name, category, division_id, weight, target, unit },
-      ipAddress: getClientIp(request.headers),
-    });
-
     return NextResponse.json({ template: data }, { status: 201 });
   } catch {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
@@ -67,24 +59,12 @@ export async function PUT(request: NextRequest) {
 
     if (!id) return NextResponse.json({ error: 'Template ID diperlukan' }, { status: 400 });
 
-    const { data: oldTemplate } = await supabaseAdmin
-      .from('kpi_templates')
-      .select('kpi_name, category, weight, target, unit, formula_type')
-      .eq('id', id).single();
-
     const { error } = await supabaseAdmin
       .from('kpi_templates')
       .update({ ...updateData, updated_at: new Date().toISOString() })
       .eq('id', id);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-    await logActivity({
-      userId: user.id, userName: user.full_name, userEmail: user.email,
-      action: 'UPDATE', entityType: 'KPI_TEMPLATE', entityId: id,
-      details: { template_name: oldTemplate?.kpi_name, changes: updateData },
-      ipAddress: getClientIp(request.headers),
-    });
 
     return NextResponse.json({ success: true });
   } catch {
@@ -103,18 +83,8 @@ export async function DELETE(request: NextRequest) {
 
   if (!id) return NextResponse.json({ error: 'Template ID diperlukan' }, { status: 400 });
 
-  const { data: tplInfo } = await supabaseAdmin
-    .from('kpi_templates').select('kpi_name, category').eq('id', id).single();
-
   const { error } = await supabaseAdmin.from('kpi_templates').delete().eq('id', id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  await logActivity({
-    userId: user.id, userName: user.full_name, userEmail: user.email,
-    action: 'DELETE', entityType: 'KPI_TEMPLATE', entityId: id,
-    details: { deleted_name: tplInfo?.kpi_name, category: tplInfo?.category },
-    ipAddress: getClientIp(request.headers),
-  });
 
   return NextResponse.json({ success: true });
 }

@@ -449,14 +449,12 @@ export default function ManageUsersPage() {
             <p className="text-gray-400 text-sm">Tidak ada user yang cocok dengan &quot;{search}&quot;</p>
           </div>
         ) : (
-          <>
-          {/* Desktop table */}
-          <div className="hidden md:block overflow-x-auto">
+          <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-white/[0.06]">
                   <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">User</th>
-                  <th className="text-left px-4 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
+                  <th className="text-left px-4 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Email</th>
                   <th className="text-center px-4 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
                   <th className="text-left px-4 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Divisi</th>
                   <th className="text-center px-4 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
@@ -471,10 +469,13 @@ export default function ManageUsersPage() {
                         <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
                           {u.full_name.charAt(0).toUpperCase()}
                         </div>
-                        <p className="text-sm text-white font-medium truncate">{u.full_name}</p>
+                        <div className="min-w-0">
+                          <p className="text-sm text-white font-medium truncate">{u.full_name}</p>
+                          <p className="text-xs text-gray-500 md:hidden truncate">{u.email}</p>
+                        </div>
                       </div>
                     </td>
-                    <td className="px-4 py-4 text-sm text-gray-400">{u.email}</td>
+                    <td className="px-4 py-4 text-sm text-gray-400 hidden md:table-cell">{u.email}</td>
                     <td className="px-4 py-4 text-center">
                       <span className={cn('text-xs font-medium px-2.5 py-1 rounded-lg',
                         u.role === 'admin' ? 'bg-brand-500/10 text-brand-300' : 'bg-emerald-500/10 text-emerald-400'
@@ -510,52 +511,6 @@ export default function ManageUsersPage() {
               </tbody>
             </table>
           </div>
-
-          {/* Mobile cards */}
-          <div className="md:hidden p-4 space-y-3">
-            {filtered.map((u) => (
-              <div key={u.id} className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                      {u.full_name.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm text-white font-medium truncate">{u.full_name}</p>
-                      <p className="text-xs text-gray-500 truncate">{u.email}</p>
-                    </div>
-                  </div>
-                  <button onClick={() => requestToggle(u)}
-                    className={cn('inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg shrink-0 ml-2',
-                      u.is_active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                    )}>
-                    {u.is_active ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
-                    {u.is_active ? 'Aktif' : 'Nonaktif'}
-                  </button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={cn('text-xs font-medium px-2.5 py-1 rounded-lg',
-                    u.role === 'admin' ? 'bg-brand-500/10 text-brand-300' : 'bg-emerald-500/10 text-emerald-400'
-                  )}>
-                    {u.role === 'admin' ? 'Admin' : 'User'}
-                  </span>
-                  <span className="text-xs text-gray-500">{u.divisions?.name || '-'}</span>
-                </div>
-                <div className="flex items-center justify-end gap-1 pt-1 border-t border-white/[0.04]">
-                  <button onClick={() => handleEdit(u)} className="p-2 text-gray-400 active:text-blue-400 active:bg-blue-500/10 rounded-lg transition-all" title="Edit">
-                    <Pencil className="w-4 h-4" />
-                  </button>
-                  <button onClick={() => openPasswordModal(u)} className="p-2 text-gray-400 active:text-amber-400 active:bg-amber-500/10 rounded-lg transition-all" title="Password">
-                    <KeyRound className="w-4 h-4" />
-                  </button>
-                  <button onClick={() => requestDelete(u)} className="p-2 text-gray-400 active:text-red-400 active:bg-red-500/10 rounded-lg transition-all" title="Hapus">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          </>
         )}
       </div>
     </div>

@@ -4,23 +4,13 @@ import { useEffect, useState, useCallback } from 'react';
 import { Shield, Users, Building2, FileSpreadsheet, TrendingUp } from 'lucide-react';
 import PeriodSelector from '@/components/PeriodSelector';
 import KpiPieChart from '@/components/KpiPieChart';
-import EmployeeProfileModal, { EmployeeData } from '@/components/EmployeeProfileModal';
 import { cn, getGradeColor, getGradeBg, getMonthName, getCurrentPeriod } from '@/lib/utils';
 
 const DIVISION_COLORS = ['#2A62FF', '#3b82f6', '#10b981', '#f59e0b'];
 
 interface DashboardData {
   divisionSummary: { id: string; name: string; averageScore: number; grade: string; userCount: number }[];
-  topEmployees: {
-    id: string;
-    name: string;
-    email: string;
-    avatar_url: string | null;
-    division: string;
-    totalScore: number;
-    grade: string;
-    scores: { kpi_name: string; category: string; weight: number; target: number; actual: number; achievement: number; weighted: number }[];
-  }[];
+  topEmployees: { id: string; name: string; division: string; totalScore: number; grade: string }[];
   stats: { totalUsers: number; totalDivisions: number };
 }
 
@@ -32,7 +22,6 @@ export default function AdminOverviewPage() {
   const [week, setWeek] = useState(currentPeriod.week);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedEmployee, setSelectedEmployee] = useState<EmployeeData | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -81,15 +70,15 @@ export default function AdminOverviewPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-        <div className="flex items-center gap-3">
-          <Shield className="w-6 h-6 sm:w-7 sm:h-7 text-brand-300 flex-shrink-0" />
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-white">Admin Overview</h1>
-            <p className="text-gray-500 text-xs sm:text-sm">
-              {periodType === 'monthly' ? `${getMonthName(month)} ${year}` : `Minggu ${week}, ${getMonthName(month)} ${year}`}
-            </p>
-          </div>
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <Shield className="w-7 h-7 text-brand-300" />
+            Admin Overview
+          </h1>
+          <p className="text-gray-500 text-sm mt-1">
+            {periodType === 'monthly' ? `${getMonthName(month)} ${year}` : `Minggu ${week}, ${getMonthName(month)} ${year}`}
+          </p>
         </div>
         <PeriodSelector periodType={periodType} year={year} month={month} week={week} onChange={handlePeriodChange} />
       </div>
@@ -165,8 +154,7 @@ export default function AdminOverviewPage() {
       {/* Top Employees */}
       <div className="bg-[#12121a] border border-white/[0.06] rounded-2xl p-6">
         <h3 className="text-sm font-semibold text-gray-400 mb-4">Top Karyawan</h3>
-        {/* Desktop table */}
-        <div className="hidden md:block overflow-x-auto">
+        <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-white/[0.06]">
@@ -179,20 +167,7 @@ export default function AdminOverviewPage() {
             </thead>
             <tbody>
               {data.topEmployees.map((emp, i) => (
-                <tr
-                  key={emp.id}
-                  onClick={() => setSelectedEmployee({
-                    id: emp.id,
-                    name: emp.name,
-                    email: emp.email,
-                    avatar_url: emp.avatar_url,
-                    division: emp.division,
-                    totalScore: emp.totalScore,
-                    grade: emp.grade,
-                    scores: emp.scores,
-                  })}
-                  className="border-b border-white/[0.03] cursor-pointer hover:bg-white/[0.03] transition-colors"
-                >
+                <tr key={emp.id} className="border-b border-white/[0.03]">
                   <td className="px-4 py-3">
                     <span className={cn(
                       'inline-flex w-8 h-8 items-center justify-center rounded-lg text-xs font-bold',
@@ -204,19 +179,7 @@ export default function AdminOverviewPage() {
                       {i + 1}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white font-bold text-xs overflow-hidden flex-shrink-0">
-                        {emp.avatar_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={emp.avatar_url} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          emp.name.charAt(0).toUpperCase()
-                        )}
-                      </div>
-                      <span className="text-sm text-white font-medium">{emp.name}</span>
-                    </div>
-                  </td>
+                  <td className="px-4 py-3 text-sm text-white font-medium">{emp.name}</td>
                   <td className="px-4 py-3 text-sm text-gray-400">{emp.division}</td>
                   <td className="px-4 py-3 text-center text-sm font-bold text-white">{emp.totalScore}</td>
                   <td className="px-4 py-3 text-center">
@@ -229,61 +192,7 @@ export default function AdminOverviewPage() {
             </tbody>
           </table>
         </div>
-
-        {/* Mobile list */}
-        <div className="md:hidden divide-y divide-white/[0.04]">
-          {data.topEmployees.map((emp, i) => (
-            <div
-              key={emp.id}
-              onClick={() => setSelectedEmployee({
-                id: emp.id,
-                name: emp.name,
-                email: emp.email,
-                avatar_url: emp.avatar_url,
-                division: emp.division,
-                totalScore: emp.totalScore,
-                grade: emp.grade,
-                scores: emp.scores,
-              })}
-              className="flex items-center gap-3 px-4 py-3.5 cursor-pointer active:bg-white/[0.03] transition-colors"
-            >
-              <span className={cn(
-                'w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0',
-                i === 0 ? 'bg-amber-500/20 text-amber-400' :
-                i === 1 ? 'bg-gray-400/20 text-gray-300' :
-                i === 2 ? 'bg-orange-500/20 text-orange-400' :
-                'bg-white/[0.04] text-gray-500'
-              )}>
-                {i + 1}
-              </span>
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white font-bold text-sm overflow-hidden shrink-0">
-                {emp.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={emp.avatar_url} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  emp.name.charAt(0).toUpperCase()
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">{emp.name}</p>
-                <p className="text-xs text-gray-500">{emp.division}</p>
-              </div>
-              <div className="text-right flex items-center gap-2 shrink-0">
-                <span className="text-sm font-bold text-white">{emp.totalScore}</span>
-                <span className={cn('text-xs font-semibold px-1.5 py-0.5 rounded-md border', getGradeBg(emp.grade), getGradeColor(emp.grade))}>
-                  {emp.grade}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
       </div>
-
-      <EmployeeProfileModal
-        open={!!selectedEmployee}
-        onClose={() => setSelectedEmployee(null)}
-        employee={selectedEmployee}
-      />
     </div>
   );
 }
