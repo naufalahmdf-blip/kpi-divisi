@@ -9,6 +9,19 @@ const CATEGORY_COLORS: Record<string, string> = {
   Efficiency: '#3b82f6',
   Quality: '#10b981',
   'Creative Development': '#f59e0b',
+  Speed: '#8b5cf6',
+  Accuracy: '#ef4444',
+  Authority: '#06b6d4',
+  Volume: '#f97316',
+  Lead: '#ec4899',
+  Followers: '#14b8a6',
+  Security: '#dc2626',
+  Recruitment: '#7c3aed',
+  Retention: '#0ea5e9',
+  Compliance: '#fb923c',
+  Engagement: '#a855f7',
+  Culture: '#d946ef',
+  Absensi: '#22c55e',
 };
 
 interface EmployeeScore {
@@ -56,7 +69,7 @@ export default function EmployeeProfileModal({ open, onClose, employee }: Employ
   if (!open || !employee) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-150" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-150" onClick={onClose}>
       <div
         className="bg-[#16161e] border border-white/[0.08] rounded-2xl w-full max-w-lg shadow-2xl shadow-black/50 animate-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}

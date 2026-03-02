@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { calculateAchievement, calculateWeightedScore, getGrade } from '@/lib/utils';
 import { aggregateAllUsers } from '@/lib/aggregation';
+import { calculateAttendanceScore, calculateFinalScore } from '@/lib/attendance';
 
 export async function GET(request: NextRequest) {
   const user = await getSession();
@@ -50,6 +51,16 @@ export async function GET(request: NextRequest) {
     entries = data || [];
   }
 
+  // Fetch attendance for the period
+  const { data: attendanceData } = await supabaseAdmin
+    .from('attendance_entries')
+    .select('*')
+    .eq('year', year)
+    .eq('month', month);
+
+  const getAttendance = (userId: string) =>
+    (attendanceData || []).find((a) => a.user_id === userId) ?? null;
+
   // Build actual value lookup
   const templateInfos = (templates || []).map((t) => ({
     id: t.id,
@@ -74,12 +85,12 @@ export async function GET(request: NextRequest) {
     const employeeScores = (users || []).map((u) => {
       const userTemplates = (templates || []).filter((t) => t.division_id === u.division_id);
 
-      let totalScore = 0;
+      let kpiTotal = 0;
       const scores = userTemplates.map((t) => {
         const actual = getActual(u.id, t.id);
         const achievement = calculateAchievement(actual, Number(t.target), t.formula_type as 'higher_better' | 'lower_better');
         const weighted = calculateWeightedScore(achievement, Number(t.weight));
-        totalScore += weighted;
+        kpiTotal += weighted;
         return {
           template_id: t.id,
           kpi_name: t.kpi_name,
@@ -92,6 +103,9 @@ export async function GET(request: NextRequest) {
         };
       });
 
+      const attendanceScore = calculateAttendanceScore(getAttendance(u.id));
+      const totalScore = calculateFinalScore(kpiTotal, attendanceScore);
+
       return {
         id: u.id,
         name: u.full_name,
@@ -99,8 +113,8 @@ export async function GET(request: NextRequest) {
         avatar_url: u.avatar_url || null,
         division: (u.divisions as unknown as { id: string; name: string; slug: string } | null)?.name || 'N/A',
         division_id: u.division_id,
-        totalScore: Math.round(totalScore * 100) / 100,
-        grade: getGrade(totalScore),
+        totalScore,
+        grade: getGrade(totalScore, 120),
         scores,
       };
     });
@@ -124,17 +138,18 @@ export async function GET(request: NextRequest) {
       const categoryScoresMap: Record<string, number[]> = {};
 
       divUsers.forEach((u) => {
-        let userTotal = 0;
+        let kpiTotal = 0;
         divTemplates.forEach((t) => {
           const actual = getActual(u.id, t.id);
           const achievement = calculateAchievement(actual, Number(t.target), t.formula_type as 'higher_better' | 'lower_better');
           const weighted = calculateWeightedScore(achievement, Number(t.weight));
-          userTotal += weighted;
+          kpiTotal += weighted;
 
           if (!categoryScoresMap[t.category]) categoryScoresMap[t.category] = [];
           categoryScoresMap[t.category].push(weighted);
         });
-        totalDivScore += userTotal;
+        const attendanceScore = calculateAttendanceScore(getAttendance(u.id));
+        totalDivScore += calculateFinalScore(kpiTotal, attendanceScore);
       });
 
       const avgScore = totalDivScore / divUsers.length;
@@ -146,7 +161,7 @@ export async function GET(request: NextRequest) {
       return {
         id: d.id, name: d.name, slug: d.slug,
         averageScore: Math.round(avgScore * 100) / 100,
-        grade: getGrade(avgScore),
+        grade: getGrade(avgScore, 120),
         userCount: divUsers.length,
         categoryBreakdown,
       };

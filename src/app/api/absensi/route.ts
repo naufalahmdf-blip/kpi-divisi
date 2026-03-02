@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     .from('users')
     .select('id, full_name, email, avatar_url, division_id, divisions(id, name)')
     .eq('is_active', true)
-    .not('division_id', 'is', null)
+    .eq('role', 'user')
     .order('full_name');
 
   const { data: attendanceEntries } = await supabaseAdmin

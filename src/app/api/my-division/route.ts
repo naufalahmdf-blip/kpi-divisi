@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { calculateAchievement, calculateWeightedScore, getGrade } from '@/lib/utils';
 import { aggregateAllUsers } from '@/lib/aggregation';
+import { calculateAttendanceScore, calculateFinalScore } from '@/lib/attendance';
 
 export async function GET(request: NextRequest) {
   const user = await getSession();
@@ -18,14 +19,12 @@ export async function GET(request: NextRequest) {
   const month = parseInt(searchParams.get('month') || (new Date().getMonth() + 1).toString());
   const week = searchParams.get('week') ? parseInt(searchParams.get('week')!) : null;
 
-  // Fetch division
   const { data: division } = await supabaseAdmin
     .from('divisions')
     .select('id, name, slug')
     .eq('id', user.division_id)
     .single();
 
-  // Fetch users in this division
   const { data: users } = await supabaseAdmin
     .from('users')
     .select('id, full_name, email, avatar_url, division_id')
@@ -33,14 +32,12 @@ export async function GET(request: NextRequest) {
     .eq('is_active', true)
     .eq('role', 'user');
 
-  // Fetch templates for this division
   const { data: templates } = await supabaseAdmin
     .from('kpi_templates')
     .select('*')
     .eq('division_id', user.division_id)
     .order('sort_order');
 
-  // Fetch entries
   let entries: { user_id: string; template_id: string; actual_value: number }[] = [];
 
   if (periodType === 'monthly') {
@@ -62,6 +59,15 @@ export async function GET(request: NextRequest) {
     entries = data || [];
   }
 
+  const { data: attendanceData } = await supabaseAdmin
+    .from('attendance_entries')
+    .select('*')
+    .eq('year', year)
+    .eq('month', month);
+
+  const getAttendance = (userId: string) =>
+    (attendanceData || []).find((a) => a.user_id === userId) ?? null;
+
   const templateInfos = (templates || []).map((t) => ({
     id: t.id,
     formula_type: t.formula_type as 'higher_better' | 'lower_better',
@@ -81,30 +87,43 @@ export async function GET(request: NextRequest) {
     };
   }
 
-  // Compute scores per member
   let totalDivScore = 0;
   const categoryScoresMap: Record<string, number[]> = {};
 
   const members = (users || []).map((u) => {
-    let totalScore = 0;
-    (templates || []).forEach((t) => {
+    let kpiTotal = 0;
+    const scores = (templates || []).map((t) => {
       const actual = getActual(u.id, t.id);
       const achievement = calculateAchievement(actual, Number(t.target), t.formula_type as 'higher_better' | 'lower_better');
       const weighted = calculateWeightedScore(achievement, Number(t.weight));
-      totalScore += weighted;
+      kpiTotal += weighted;
 
       if (!categoryScoresMap[t.category]) categoryScoresMap[t.category] = [];
       categoryScoresMap[t.category].push(weighted);
+
+      return {
+        kpi_name: t.kpi_name,
+        category: t.category,
+        weight: Number(t.weight),
+        target: Number(t.target),
+        actual,
+        achievement,
+        weighted,
+      };
     });
 
+    const attendanceScore = calculateAttendanceScore(getAttendance(u.id));
+    const totalScore = calculateFinalScore(kpiTotal, attendanceScore);
     totalDivScore += totalScore;
 
     return {
       id: u.id,
       name: u.full_name,
+      email: u.email,
       avatar_url: u.avatar_url || null,
       totalScore: Math.round(totalScore * 100) / 100,
-      grade: getGrade(totalScore),
+      grade: getGrade(totalScore, 120),
+      scores,
     };
   });
 
@@ -116,7 +135,6 @@ export async function GET(request: NextRequest) {
     avgScore: members.length > 0 ? scores.reduce((a, b) => a + b, 0) / members.length : 0,
   }));
 
-  // Find current user's rank
   const userRank = members.findIndex((m) => m.id === user.id) + 1;
   const userScore = members.find((m) => m.id === user.id)?.totalScore ?? 0;
   const topEmployee = members.length > 0 ? members[0] : null;
@@ -124,12 +142,13 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     division,
     averageScore: Math.round(avgScore * 100) / 100,
-    grade: getGrade(avgScore),
+    grade: getGrade(avgScore, 120),
     userCount: members.length,
     categoryBreakdown,
     members,
     topEmployee,
     userRank,
     userScore,
+    userRole: user.role,
   });
 }

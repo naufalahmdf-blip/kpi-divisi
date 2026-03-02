@@ -14,12 +14,12 @@ export async function GET(request: NextRequest) {
   const year = parseInt(searchParams.get('year') || new Date().getFullYear().toString());
   const month = parseInt(searchParams.get('month') || (new Date().getMonth() + 1).toString());
 
-  // Fetch all active users that belong to a division (admin included)
+  // Fetch all active non-admin users
   const { data: users } = await supabaseAdmin
     .from('users')
     .select('id, full_name, email, avatar_url, division_id, divisions(id, name)')
     .eq('is_active', true)
-    .not('division_id', 'is', null)
+    .eq('role', 'user')
     .order('full_name');
 
   // Fetch attendance entries for the period

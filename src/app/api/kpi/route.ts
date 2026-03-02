@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { aggregateWeeklyToMonthly } from '@/lib/aggregation';
+import { logActivity, getClientIp } from '@/lib/activity-log';
+import { calculateAttendanceScore } from '@/lib/attendance';
 
 // GET: Fetch KPI entries for current user or specified user (admin)
 export async function GET(request: NextRequest) {
@@ -38,6 +40,17 @@ export async function GET(request: NextRequest) {
     .eq('division_id', targetUser.division_id)
     .order('sort_order');
 
+  // Fetch attendance entry for this user/month (always monthly)
+  const { data: attendanceData } = await supabaseAdmin
+    .from('attendance_entries')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('year', year)
+    .eq('month', month)
+    .maybeSingle();
+
+  const attendanceScore = calculateAttendanceScore(attendanceData);
+
   if (periodType === 'monthly') {
     // Monthly: aggregate from ALL weekly entries in this month
     const { data: weeklyEntries } = await supabaseAdmin
@@ -67,6 +80,8 @@ export async function GET(request: NextRequest) {
       entries: syntheticEntries,
       period: { type: 'monthly', year, month, week: null },
       is_aggregated: true,
+      attendance: attendanceData ?? null,
+      attendanceScore,
     });
   }
 
@@ -90,6 +105,8 @@ export async function GET(request: NextRequest) {
     templates: templates || [],
     entries: entries || [],
     period: { type: 'weekly', year, month, week },
+    attendance: attendanceData ?? null,
+    attendanceScore,
   });
 }
 
@@ -144,6 +161,17 @@ export async function POST(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    await logActivity({
+      userId: user.id, userName: user.full_name, userEmail: user.email,
+      action: 'UPDATE', entityType: 'KPI_ENTRY', entityId: userId,
+      details: {
+        period: { type: 'weekly', year, month, week },
+        entries_count: entries.length,
+        ...(userId !== user.id ? { submitted_for: userId } : {}),
+      },
+      ipAddress: getClientIp(request.headers),
+    });
 
     return NextResponse.json({ success: true });
   } catch {

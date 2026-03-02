@@ -30,6 +30,19 @@ const CATEGORY_COLORS: Record<string, string> = {
   Efficiency: 'bg-blue-500/10 text-blue-400',
   Quality: 'bg-emerald-500/10 text-emerald-400',
   'Creative Development': 'bg-amber-500/10 text-amber-400',
+  Speed: 'bg-purple-500/10 text-purple-400',
+  Accuracy: 'bg-red-500/10 text-red-400',
+  Authority: 'bg-cyan-500/10 text-cyan-400',
+  Volume: 'bg-orange-500/10 text-orange-400',
+  Lead: 'bg-pink-500/10 text-pink-400',
+  Followers: 'bg-teal-500/10 text-teal-400',
+  Security: 'bg-red-700/10 text-red-500',
+  Recruitment: 'bg-violet-500/10 text-violet-400',
+  Retention: 'bg-sky-500/10 text-sky-400',
+  Compliance: 'bg-orange-400/10 text-orange-300',
+  Engagement: 'bg-purple-500/10 text-purple-400',
+  Culture: 'bg-fuchsia-500/10 text-fuchsia-400',
+  Absensi: 'bg-green-500/10 text-green-400',
 };
 
 export default function TemplatesPage() {
@@ -355,7 +368,8 @@ export default function TemplatesPage() {
                 {tpls.reduce((s, t) => s + Number(t.weight), 0) === 100 ? 'Bobot lengkap' : 'Bobot belum 100%'}
               </div>
             </div>
-            <div className="overflow-x-auto">
+            {/* Desktop table */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-white/[0.04]">
@@ -403,6 +417,38 @@ export default function TemplatesPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="md:hidden p-4 space-y-3">
+              {tpls.map((t) => (
+                <div key={t.id} className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className={cn('text-xs font-medium px-2.5 py-1 rounded-lg', CATEGORY_COLORS[t.category] || 'bg-gray-500/10 text-gray-400')}>
+                      {t.category}
+                    </span>
+                    <span className={cn('text-xs px-2.5 py-1 rounded-lg font-medium',
+                      t.formula_type === 'higher_better' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-blue-500/10 text-blue-400'
+                    )}>
+                      {t.formula_type === 'higher_better' ? 'Higher' : 'Lower'}
+                    </span>
+                  </div>
+                  <p className="text-sm font-medium text-white">{t.kpi_name}</p>
+                  <div className="flex items-center gap-3 text-xs text-gray-400">
+                    <span>Bobot: {t.weight}%</span>
+                    <span>Target: {t.target}</span>
+                    <span>{t.unit}</span>
+                  </div>
+                  <div className="flex items-center justify-end gap-1 pt-1">
+                    <button onClick={() => handleEdit(t)} className="p-2 text-gray-400 active:text-blue-400 active:bg-blue-500/10 rounded-lg transition-all">
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => requestDelete(t)} className="p-2 text-gray-400 active:text-red-400 active:bg-red-500/10 rounded-lg transition-all">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         ))

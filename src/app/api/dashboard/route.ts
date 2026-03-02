@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { calculateAchievement, calculateWeightedScore, getGrade } from '@/lib/utils';
 import { aggregateAllUsers } from '@/lib/aggregation';
+import { calculateAttendanceScore, calculateFinalScore } from '@/lib/attendance';
 
 export async function GET(request: NextRequest) {
   const user = await getSession();
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
   // Get all users
   const { data: allUsers } = await supabaseAdmin
     .from('users')
-    .select('id, full_name, division_id, role, divisions(id, name)')
+    .select('id, full_name, email, avatar_url, division_id, role, divisions(id, name)')
     .eq('is_active', true)
     .eq('role', 'user');
 
@@ -31,7 +32,6 @@ export async function GET(request: NextRequest) {
   let entries: { user_id: string; template_id: string; actual_value: number }[] = [];
 
   if (periodType === 'monthly') {
-    // Fetch ALL weekly entries for the month
     const { data } = await supabaseAdmin
       .from('kpi_entries')
       .select('*')
@@ -40,7 +40,6 @@ export async function GET(request: NextRequest) {
       .eq('month', month);
     entries = data || [];
   } else {
-    // Fetch weekly entries for specific week
     const { data } = await supabaseAdmin
       .from('kpi_entries')
       .select('*')
@@ -51,9 +50,18 @@ export async function GET(request: NextRequest) {
     entries = data || [];
   }
 
+  // Fetch attendance entries for the period
+  const { data: attendanceData } = await supabaseAdmin
+    .from('attendance_entries')
+    .select('*')
+    .eq('year', year)
+    .eq('month', month);
+
+  const getAttendance = (userId: string) =>
+    (attendanceData || []).find((a) => a.user_id === userId) ?? null;
+
   // Pre-compute aggregated actuals for monthly mode
   const userIds = (allUsers || []).map((u) => u.id);
-  // Include current user if they're admin (they won't be in allUsers which filters role='user')
   if (user.role === 'user' && !userIds.includes(user.id)) {
     userIds.push(user.id);
   }
@@ -63,7 +71,6 @@ export async function GET(request: NextRequest) {
     formula_type: t.formula_type as 'higher_better' | 'lower_better',
   }));
 
-  // For monthly: aggregate per user; for weekly: build direct lookup
   let getActual: (userId: string, templateId: string) => number;
 
   if (periodType === 'monthly') {
@@ -83,18 +90,20 @@ export async function GET(request: NextRequest) {
 
   if (user.role === 'user' && user.division_id) {
     const myTemplates = (templates || []).filter((t) => t.division_id === user.division_id);
-    let total = 0;
+    let kpiTotal = 0;
 
     myScores = myTemplates.map((t) => {
       const actual = getActual(user.id, t.id);
       const achievement = calculateAchievement(actual, Number(t.target), t.formula_type as 'higher_better' | 'lower_better');
       const weighted = calculateWeightedScore(achievement, Number(t.weight));
-      total += weighted;
+      kpiTotal += weighted;
       return { kpi_name: t.kpi_name, category: t.category, weighted, achievement, weight: Number(t.weight) };
     });
 
-    myScore = Math.round(total * 100) / 100;
-    myGrade = getGrade(total);
+    const attendanceScore = calculateAttendanceScore(getAttendance(user.id));
+    const finalTotal = calculateFinalScore(kpiTotal, attendanceScore);
+    myScore = finalTotal;
+    myGrade = getGrade(finalTotal, 120);
   }
 
   // Division summary
@@ -108,40 +117,76 @@ export async function GET(request: NextRequest) {
 
     let totalDiv = 0;
     divUsers.forEach((u) => {
-      let userTotal = 0;
+      let kpiTotal = 0;
       divTemplates.forEach((t) => {
         const actual = getActual(u.id, t.id);
         const achievement = calculateAchievement(actual, Number(t.target), t.formula_type as 'higher_better' | 'lower_better');
-        userTotal += calculateWeightedScore(achievement, Number(t.weight));
+        kpiTotal += calculateWeightedScore(achievement, Number(t.weight));
       });
-      totalDiv += userTotal;
+      const attendanceScore = calculateAttendanceScore(getAttendance(u.id));
+      totalDiv += calculateFinalScore(kpiTotal, attendanceScore);
     });
 
     const avg = totalDiv / divUsers.length;
-    return { ...d, averageScore: Math.round(avg * 100) / 100, grade: getGrade(avg), userCount: divUsers.length };
+    return { ...d, averageScore: Math.round(avg * 100) / 100, grade: getGrade(avg, 120), userCount: divUsers.length };
   });
 
   // Top 5 employees
   const employeeScores = (allUsers || []).map((u) => {
     const userTemplates = (templates || []).filter((t) => t.division_id === u.division_id);
-    let total = 0;
+    let kpiTotal = 0;
 
-    userTemplates.forEach((t) => {
+    const scores = userTemplates.map((t) => {
       const actual = getActual(u.id, t.id);
       const achievement = calculateAchievement(actual, Number(t.target), t.formula_type as 'higher_better' | 'lower_better');
-      total += calculateWeightedScore(achievement, Number(t.weight));
+      const weighted = calculateWeightedScore(achievement, Number(t.weight));
+      kpiTotal += weighted;
+      return {
+        kpi_name: t.kpi_name,
+        category: t.category,
+        weight: Number(t.weight),
+        target: Number(t.target),
+        actual,
+        achievement,
+        weighted,
+      };
     });
+
+    const attendanceScore = calculateAttendanceScore(getAttendance(u.id));
+    const totalScore = calculateFinalScore(kpiTotal, attendanceScore);
 
     return {
       id: u.id,
       name: u.full_name,
+      email: u.email,
+      avatar_url: u.avatar_url || null,
       division: (u.divisions as unknown as { name: string } | null)?.name || 'N/A',
-      totalScore: Math.round(total * 100) / 100,
-      grade: getGrade(total),
+      totalScore,
+      grade: getGrade(totalScore, 120),
+      scores,
     };
   });
 
   employeeScores.sort((a, b) => b.totalScore - a.totalScore);
+
+  // Late employees — sorted by late rate descending (only those with attendance data)
+  const lateEmployees = (allUsers || [])
+    .map((u) => {
+      const att = getAttendance(u.id);
+      if (!att || att.hadir === 0) return null;
+      const lateRate = (att.terlambat / att.hadir) * 100;
+      return {
+        id: u.id,
+        name: u.full_name,
+        division: (u.divisions as unknown as { name: string } | null)?.name || 'N/A',
+        lateRate: Math.round(lateRate * 10) / 10,
+        terlambat: att.terlambat,
+        hadir: att.hadir,
+      };
+    })
+    .filter((e): e is NonNullable<typeof e> => e !== null)
+    .sort((a, b) => b.lateRate - a.lateRate)
+    .slice(0, 5);
 
   return NextResponse.json({
     user: {
@@ -152,6 +197,7 @@ export async function GET(request: NextRequest) {
     },
     divisionSummary,
     topEmployees: employeeScores.slice(0, 5),
+    lateEmployees,
     stats: {
       totalUsers: allUsers?.length || 0,
       totalDivisions: divisions?.length || 0,

@@ -102,3 +102,17 @@ input[type="number"] {
 .duration-300 {
   animation-duration: 300ms;
 }
+
+@keyframes slide-up-panel {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.slide-up-panel {
+  animation-name: slide-up-panel;
+}
+
+/* Safe area for bottom nav on notched devices */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
