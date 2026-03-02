@@ -15,6 +15,7 @@ import {
   UserCircle,
   TrendingUp,
   ScrollText,
+  CalendarCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -34,6 +35,7 @@ const adminLinks = [
   { href: '/admin/divisions', label: 'Divisi', icon: Building2 },
   { href: '/admin/templates', label: 'Template KPI', icon: FileSpreadsheet },
   { href: '/admin/divisi', label: 'Performa Divisi', icon: TrendingUp },
+  { href: '/admin/absensi', label: 'Absensi', icon: CalendarCheck },
   { href: '/admin/activity-logs', label: 'Activity Log', icon: ScrollText },
 ];
 
@@ -45,6 +47,7 @@ export default function Sidebar({ user }: SidebarProps) {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/kpi', label: 'KPI Saya', icon: Target },
     { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
+    { href: '/absensi', label: 'Absensi', icon: CalendarCheck },
     ...(user.division_name ? [{ href: '/divisi-saya', label: 'Divisi Saya', icon: Building2 }] : []),
     { href: '/profile', label: 'Profil', icon: UserCircle },
   ];

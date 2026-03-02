@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Users, Building2, Trophy, TrendingUp, Medal, Crown, ChevronRight } from 'lucide-react';
+import { Users, Building2, Trophy, TrendingUp, Medal, Crown, ChevronRight, Clock } from 'lucide-react';
 import PeriodSelector from '@/components/PeriodSelector';
 import KpiPieChart from '@/components/KpiPieChart';
 import EmployeeProfileModal, { EmployeeData } from '@/components/EmployeeProfileModal';
@@ -19,6 +19,13 @@ const CATEGORY_COLORS: Record<string, string> = {
   Volume: '#f97316',
   Lead: '#ec4899',
   Followers: '#14b8a6',
+  Security: '#dc2626',
+  Recruitment: '#7c3aed',
+  Retention: '#0ea5e9',
+  Compliance: '#fb923c',
+  Engagement: '#a855f7',
+  Culture: '#d946ef',
+  Absensi: '#22c55e',
 };
 
 const GRADE_COLORS_HEX: Record<string, string> = {
@@ -42,6 +49,7 @@ interface DashboardData {
   };
   divisionSummary: { id: string; name: string; averageScore: number; grade: string; userCount: number }[];
   topEmployees: { id: string; name: string; email: string; avatar_url: string | null; division: string; totalScore: number; grade: string; scores: { kpi_name: string; category: string; weight: number; target: number; actual: number; achievement: number; weighted: number }[] }[];
+  lateEmployees: { id: string; name: string; division: string; lateRate: number; terlambat: number; hadir: number }[];
   stats: { totalUsers: number; totalDivisions: number };
 }
 
@@ -111,7 +119,7 @@ export default function DashboardPage() {
     const companyAvg = activeDivisions.length > 0
       ? Math.round(activeDivisions.reduce((sum, d) => sum + d.averageScore, 0) / activeDivisions.length * 100) / 100
       : 0;
-    const companyGrade = getGrade(companyAvg);
+    const companyGrade = getGrade(companyAvg, 120);
     const bestDivision = activeDivisions[0] || null;
     const maxScore = Math.max(...sortedDivisions.map(d => d.averageScore), 1);
     const topOne = data.topEmployees[0] || null;
@@ -147,7 +155,7 @@ export default function DashboardPage() {
                   <span className={cn('px-3 py-1.5 rounded-xl border text-sm font-bold', getGradeBg(companyGrade), getGradeColor(companyGrade))}>
                     Grade {companyGrade}
                   </span>
-                  <p className="text-xs text-gray-500 mt-1.5">dari 100 poin</p>
+                  <p className="text-xs text-gray-500 mt-1.5">dari 120 poin</p>
                 </div>
               </div>
             </div>
@@ -336,6 +344,52 @@ export default function DashboardPage() {
                 )}
               </div>
             </div>
+
+            {/* Karyawan Sering Terlambat */}
+            {periodType === 'monthly' && (
+              <div className="bg-[#12121a] border border-white/[0.06] rounded-2xl overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-white/[0.06] flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-red-400" />
+                  <h3 className="text-sm font-semibold text-white">Sering Terlambat</h3>
+                  <span className="ml-auto text-xs text-gray-500">{periodLabel}</span>
+                </div>
+                {data.lateEmployees.length === 0 ? (
+                  <div className="py-8 text-center">
+                    <Clock className="w-8 h-8 text-gray-700 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500">Tidak ada data</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-white/[0.04]">
+                    {data.lateEmployees.map((emp, i) => (
+                      <div key={emp.id} className="flex items-center gap-2.5 px-4 py-3 hover:bg-white/[0.02] transition-colors">
+                        <div className={cn(
+                          'w-7 h-7 rounded-lg flex items-center justify-center font-bold text-[11px] flex-shrink-0',
+                          i === 0 ? 'bg-red-500/20 text-red-400' :
+                          i === 1 ? 'bg-orange-500/20 text-orange-400' :
+                          i === 2 ? 'bg-amber-500/20 text-amber-400' :
+                          'bg-white/[0.04] text-gray-500'
+                        )}>
+                          {i + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-white truncate">{emp.name}</p>
+                          <p className="text-[10px] text-gray-500">{emp.division}</p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className={cn(
+                            'text-sm font-bold',
+                            emp.lateRate > 15 ? 'text-red-400' : emp.lateRate > 5 ? 'text-amber-400' : 'text-emerald-400'
+                          )}>
+                            {emp.lateRate.toFixed(1)}%
+                          </p>
+                          <p className="text-[10px] text-gray-500">{emp.terlambat}/{emp.hadir} hari</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -351,18 +405,6 @@ export default function DashboardPage() {
   // ═══════════════════════════════════════════
   //  USER DASHBOARD
   // ═══════════════════════════════════════════
-  const categoryData = data.user.scores?.length
-    ? Object.entries(
-        data.user.scores.reduce((acc, s) => {
-          acc[s.category] = (acc[s.category] || 0) + s.weighted;
-          return acc;
-        }, {} as Record<string, number>)
-      ).map(([name, value]) => ({
-        name,
-        value,
-        color: CATEGORY_COLORS[name] || '#6b7280',
-      }))
-    : [];
 
   const DIVISION_COLORS = ['#2A62FF', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
   const divisionPieData = data.divisionSummary.map((d, i) => ({
@@ -439,13 +481,49 @@ export default function DashboardPage() {
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {categoryData.length > 0 && (
-          <KpiPieChart
-            data={categoryData}
-            title="Skor KPI per Kategori"
-            centerLabel="Total"
-            centerValue={data.user.score?.toString() || '0'}
-          />
+        {/* KPI Achievement Bars */}
+        {data.user.scores?.length > 0 && (
+          <div className="bg-[#12121a] border border-white/[0.06] rounded-2xl p-5 sm:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-brand-300" />
+                <h3 className="text-sm font-semibold text-white">Pencapaian KPI</h3>
+              </div>
+              <div className="flex items-center gap-2 text-[10px]">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />≥100%</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />70-99%</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block" />&lt;70%</span>
+              </div>
+            </div>
+            <div className="space-y-3.5 max-h-72 overflow-y-auto pr-1">
+              {data.user.scores.map((kpi, i) => {
+                const pct = Math.min(kpi.achievement, 100);
+                const barColor = kpi.achievement >= 100 ? '#10b981' : kpi.achievement >= 70 ? '#f59e0b' : '#ef4444';
+                const textColor = kpi.achievement >= 100 ? 'text-emerald-400' : kpi.achievement >= 70 ? 'text-amber-400' : 'text-red-400';
+                const catColor = CATEGORY_COLORS[kpi.category] || '#6b7280';
+                return (
+                  <div key={i}>
+                    <div className="flex items-center justify-between mb-1.5 gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: catColor }} />
+                        <span className="text-xs sm:text-sm text-white truncate">{kpi.kpi_name}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <span className={`text-xs font-bold ${textColor}`}>{kpi.achievement.toFixed(0)}%</span>
+                        <span className="text-[10px] text-gray-600">({kpi.weighted.toFixed(1)} pts)</span>
+                      </div>
+                    </div>
+                    <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-700"
+                        style={{ width: `${pct}%`, backgroundColor: barColor }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
 
         <KpiPieChart
@@ -456,26 +534,26 @@ export default function DashboardPage() {
         />
 
         {/* Division Cards */}
-        <div className="bg-[#12121a] border border-white/[0.06] rounded-2xl p-6">
-          <h3 className="text-sm font-semibold text-gray-400 mb-4">Performa Divisi</h3>
-          <div className="space-y-3">
+        <div className="bg-[#12121a] border border-white/[0.06] rounded-2xl p-4 sm:p-6">
+          <h3 className="text-sm font-semibold text-gray-400 mb-3 sm:mb-4">Performa Divisi</h3>
+          <div className="space-y-2 sm:space-y-3">
             {data.divisionSummary.map((div, i) => (
-              <div key={div.id} className="flex items-center gap-4 p-3 bg-white/[0.02] rounded-xl">
+              <div key={div.id} className="flex items-center gap-2.5 sm:gap-4 p-2.5 sm:p-3 bg-white/[0.02] rounded-xl">
                 <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm"
+                  className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0"
                   style={{ backgroundColor: DIVISION_COLORS[i % DIVISION_COLORS.length] + '20', color: DIVISION_COLORS[i % DIVISION_COLORS.length] }}
                 >
                   {i + 1}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white">{div.name}</p>
-                  <p className="text-xs text-gray-500">{div.userCount} anggota</p>
+                  <p className="text-xs sm:text-sm font-medium text-white truncate">{div.name}</p>
+                  <p className="text-[10px] sm:text-xs text-gray-500">{div.userCount} anggota</p>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-white">{div.averageScore}</p>
-                  <p className={cn('text-xs font-semibold', getGradeColor(div.grade))}>Grade {div.grade}</p>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-xs sm:text-sm font-bold text-white">{div.averageScore}</p>
+                  <p className={cn('text-[10px] sm:text-xs font-semibold', getGradeColor(div.grade))}>Grade {div.grade}</p>
                 </div>
-                <div className="w-24 h-2 bg-white/[0.06] rounded-full overflow-hidden">
+                <div className="w-16 sm:w-24 h-1.5 sm:h-2 bg-white/[0.06] rounded-full overflow-hidden hidden sm:block flex-shrink-0">
                   <div
                     className="h-full rounded-full transition-all duration-500"
                     style={{
@@ -490,16 +568,16 @@ export default function DashboardPage() {
         </div>
 
         {/* Top Employees */}
-        <div className="bg-[#12121a] border border-white/[0.06] rounded-2xl p-6">
-          <div className="flex items-center gap-2 mb-4">
+        <div className="bg-[#12121a] border border-white/[0.06] rounded-2xl p-4 sm:p-6">
+          <div className="flex items-center gap-2 mb-3 sm:mb-4">
             <Trophy className="w-4 h-4 text-amber-400" />
             <h3 className="text-sm font-semibold text-gray-400">Top 5 Karyawan</h3>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-2 sm:space-y-3">
             {data.topEmployees.map((emp, i) => (
-              <div key={emp.id} className="flex items-center gap-4 p-3 bg-white/[0.02] rounded-xl">
+              <div key={emp.id} className="flex items-center gap-2.5 sm:gap-4 p-2.5 sm:p-3 bg-white/[0.02] rounded-xl">
                 <div className={cn(
-                  'w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm',
+                  'w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0',
                   i === 0 ? 'bg-amber-500/20 text-amber-400' :
                   i === 1 ? 'bg-gray-400/20 text-gray-300' :
                   i === 2 ? 'bg-orange-500/20 text-orange-400' :
@@ -508,12 +586,12 @@ export default function DashboardPage() {
                   #{i + 1}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white">{emp.name}</p>
-                  <p className="text-xs text-gray-500">{emp.division}</p>
+                  <p className="text-xs sm:text-sm font-medium text-white truncate">{emp.name}</p>
+                  <p className="text-[10px] sm:text-xs text-gray-500">{emp.division}</p>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-white">{emp.totalScore}</p>
-                  <p className={cn('text-xs font-semibold', getGradeColor(emp.grade))}>Grade {emp.grade}</p>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-xs sm:text-sm font-bold text-white">{emp.totalScore}</p>
+                  <p className={cn('text-[10px] sm:text-xs font-semibold', getGradeColor(emp.grade))}>Grade {emp.grade}</p>
                 </div>
               </div>
             ))}

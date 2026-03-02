@@ -36,6 +36,13 @@ const CATEGORY_COLORS: Record<string, string> = {
   Volume: 'bg-orange-500/10 text-orange-400',
   Lead: 'bg-pink-500/10 text-pink-400',
   Followers: 'bg-teal-500/10 text-teal-400',
+  Security: 'bg-red-700/10 text-red-500',
+  Recruitment: 'bg-violet-500/10 text-violet-400',
+  Retention: 'bg-sky-500/10 text-sky-400',
+  Compliance: 'bg-orange-400/10 text-orange-300',
+  Engagement: 'bg-purple-500/10 text-purple-400',
+  Culture: 'bg-fuchsia-500/10 text-fuchsia-400',
+  Absensi: 'bg-green-500/10 text-green-400',
 };
 
 export default function TemplatesPage() {

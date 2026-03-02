@@ -69,7 +69,26 @@ CREATE TABLE kpi_entries (
 );
 
 -- ============================================
--- 5. SESSIONS TABLE (for auth)
+-- 5. ATTENDANCE ENTRIES TABLE
+-- Monthly attendance summary per user
+-- ============================================
+CREATE TABLE attendance_entries (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  year INT NOT NULL,
+  month INT NOT NULL CHECK (month BETWEEN 1 AND 12),
+  hari_kerja INT NOT NULL DEFAULT 0,
+  hadir INT NOT NULL DEFAULT 0,
+  terlambat INT NOT NULL DEFAULT 0,
+  sakit INT NOT NULL DEFAULT 0,
+  cuti INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, year, month)
+);
+
+-- ============================================
+-- 6. SESSIONS TABLE (for auth)
 -- ============================================
 CREATE TABLE sessions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -90,6 +109,8 @@ CREATE INDEX idx_kpi_entries_period ON kpi_entries(period_type, year, month);
 CREATE INDEX idx_kpi_entries_template ON kpi_entries(template_id);
 CREATE INDEX idx_sessions_token ON sessions(token);
 CREATE INDEX idx_sessions_expires ON sessions(expires_at);
+CREATE INDEX idx_attendance_user ON attendance_entries(user_id);
+CREATE INDEX idx_attendance_period ON attendance_entries(year, month);
 
 -- ============================================
 -- SEED: DIVISIONS
@@ -99,7 +120,10 @@ INSERT INTO divisions (name, slug) VALUES
   ('Video Editor', 'video-editor'),
   ('Sales', 'sales'),
   ('Community', 'community'),
-  ('Creative', 'creative');
+  ('Creative', 'creative'),
+  ('Research', 'research'),
+  ('Web Developer', 'web-developer'),
+  ('Management', 'management');
 
 -- ============================================
 -- SEED: KPI TEMPLATES
@@ -177,6 +201,46 @@ CROSS JOIN (VALUES
 ) AS v(category, kpi_name, weight, target, unit, formula_type, sort_order)
 WHERE d.slug = 'creative';
 
+-- Research
+INSERT INTO kpi_templates (division_id, category, kpi_name, weight, target, unit, formula_type, sort_order)
+SELECT d.id, v.category, v.kpi_name, v.weight, v.target, v.unit, v.formula_type, v.sort_order
+FROM divisions d
+CROSS JOIN (VALUES
+  ('Productivity', 'Weekly Macro Summary',      20, 12, 'Summary',    'higher_better', 1),
+  ('Productivity', 'Crypto Monday Deep Dive',   15,  4, 'Report',     'higher_better', 2),
+  ('Productivity', 'Daily Newsletter',          30, 20, 'Newsletter', 'higher_better', 3),
+  ('Quality',      'Revision Rate',             20, 25, '%',          'lower_better',  4),
+  ('Accuracy',     'Minor Typo Control',        15,  3, 'Typo',       'lower_better',  5)
+) AS v(category, kpi_name, weight, target, unit, formula_type, sort_order)
+WHERE d.slug = 'research';
+
+-- Web Developer
+INSERT INTO kpi_templates (division_id, category, kpi_name, weight, target, unit, formula_type, sort_order)
+SELECT d.id, v.category, v.kpi_name, v.weight, v.target, v.unit, v.formula_type, v.sort_order
+FROM divisions d
+CROSS JOIN (VALUES
+  ('Productivity', 'Task Delivery Speed',                  40, 90, '%',          'higher_better', 1),
+  ('Quality',      'Release Quality Control (QC)',         30,  0, 'Bug',        'lower_better',  2),
+  ('Security',     'Security & Backup',                    15,  4, 'Checklist',  'higher_better', 3),
+  ('Quality',      'Documentation & Version Control',      15,  4, 'Checklist',  'higher_better', 4)
+) AS v(category, kpi_name, weight, target, unit, formula_type, sort_order)
+WHERE d.slug = 'web-developer';
+
+-- Management
+INSERT INTO kpi_templates (division_id, category, kpi_name, weight, target, unit, formula_type, sort_order)
+SELECT d.id, v.category, v.kpi_name, v.weight, v.target, v.unit, v.formula_type, v.sort_order
+FROM divisions d
+CROSS JOIN (VALUES
+  ('Recruitment',  'Time-to-Hire',                              15, 30, 'Day',        'lower_better',  1),
+  ('Recruitment',  'Early Performance & Probation Control',     15,  0, 'Failed',     'lower_better',  2),
+  ('Retention',    'High Performer Retention',                  20,  0, 'Exit',       'lower_better',  3),
+  ('Compliance',   'Discipline & Compliance',                   15,  0, 'Error',      'lower_better',  4),
+  ('Engagement',   'Monthly 1-on-1 Monitoring System',         15,100, '%',          'higher_better', 5),
+  ('Retention',    'Retention Risk Monitoring',                 10,  1, 'Dashboard',  'higher_better', 6),
+  ('Culture',      'Culture & Internal Activity Execution',     10,  1, 'Activity',   'higher_better', 7)
+) AS v(category, kpi_name, weight, target, unit, formula_type, sort_order)
+WHERE d.slug = 'management';
+
 -- ============================================
 -- SEED: ADMIN USER (password: admin123)
 -- Hash generated with bcrypt
@@ -251,6 +315,7 @@ ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kpi_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kpi_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE attendance_entries ENABLE ROW LEVEL SECURITY;
 
 -- Allow all authenticated operations via service role
 CREATE POLICY "Allow all for service role" ON divisions FOR ALL USING (true);
@@ -259,3 +324,4 @@ CREATE POLICY "Allow all for service role" ON kpi_templates FOR ALL USING (true)
 CREATE POLICY "Allow all for service role" ON kpi_entries FOR ALL USING (true);
 CREATE POLICY "Allow all for service role" ON sessions FOR ALL USING (true);
 CREATE POLICY "Allow all for service role" ON activity_logs FOR ALL USING (true);
+CREATE POLICY "Allow all for service role" ON attendance_entries FOR ALL USING (true);

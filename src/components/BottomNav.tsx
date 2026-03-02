@@ -13,6 +13,7 @@ import {
   FileSpreadsheet,
   TrendingUp,
   ScrollText,
+  CalendarCheck,
   MoreHorizontal,
   X,
   LogOut,
@@ -48,6 +49,7 @@ export default function BottomNav({ user }: BottomNavProps) {
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { href: '/kpi', label: 'KPI', icon: Target },
         { href: '/leaderboard', label: 'Peringkat', icon: Trophy },
+        { href: '/absensi', label: 'Absensi', icon: CalendarCheck },
         ...(user.division_name
           ? [{ href: '/divisi-saya', label: 'Divisi', icon: Building2 }]
           : []),
@@ -59,6 +61,7 @@ export default function BottomNav({ user }: BottomNavProps) {
         { href: '/admin/templates', label: 'Template KPI', icon: FileSpreadsheet },
         { href: '/admin/divisi', label: 'Performa', icon: TrendingUp },
         { href: '/admin/activity-logs', label: 'Activity Log', icon: ScrollText },
+        { href: '/absensi', label: 'Absensi', icon: CalendarCheck },
         { href: '/kpi', label: 'KPI Saya', icon: Target },
         { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
         { href: '/profile', label: 'Profil', icon: UserCircle },

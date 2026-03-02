@@ -30,10 +30,16 @@ export function calculateWeightedScore(achievement: number, weight: number): num
   return achievement * weight;
 }
 
-export function getGrade(totalScore: number): string {
-  if (totalScore >= 90) return 'A';
-  if (totalScore >= 80) return 'B';
-  if (totalScore >= 70) return 'C';
+/**
+ * Grade based on percentage of max score.
+ * @param score  Raw score (e.g. 0–100 for KPI-only, 0–120 for KPI+Absensi)
+ * @param max    Maximum possible score (default 100)
+ */
+export function getGrade(score: number, max: number = 100): string {
+  const pct = (score / max) * 100;
+  if (pct >= 90) return 'A';
+  if (pct >= 80) return 'B';
+  if (pct >= 70) return 'C';
   return 'D';
 }
 

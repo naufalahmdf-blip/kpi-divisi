@@ -3,11 +3,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Save, Loader2, Target, CheckCircle2, AlertCircle, Calendar, CalendarDays, Info, ArrowLeft } from 'lucide-react';
+import { Save, Loader2, Target, CheckCircle2, AlertCircle, Calendar, CalendarDays, Info, ArrowLeft, CalendarCheck, ExternalLink } from 'lucide-react';
 import PeriodSelector from '@/components/PeriodSelector';
-import KpiPieChart from '@/components/KpiPieChart';
+
 import { useToast } from '@/components/Toast';
 import { cn, calculateAchievement, calculateWeightedScore, getGrade, getGradeColor, getGradeBg, formatPercent, getMonthName, getCurrentPeriod } from '@/lib/utils';
+import { calculateAttendanceScore, calculateFinalScore, getAttendanceRates, type AttendanceEntry } from '@/lib/attendance';
 
 const CATEGORY_COLORS: Record<string, string> = {
   Productivity: '#2A62FF',
@@ -20,6 +21,13 @@ const CATEGORY_COLORS: Record<string, string> = {
   Volume: '#f97316',
   Lead: '#ec4899',
   Followers: '#14b8a6',
+  Security: '#dc2626',
+  Recruitment: '#7c3aed',
+  Retention: '#0ea5e9',
+  Compliance: '#fb923c',
+  Engagement: '#a855f7',
+  Culture: '#d946ef',
+  Absensi: '#22c55e',
 };
 
 interface Template {
@@ -47,7 +55,7 @@ export default function AdminKpiEditPage() {
   const { toast } = useToast();
   const currentPeriod = getCurrentPeriod();
 
-  const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('weekly');
+  const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('monthly');
   const [year, setYear] = useState(parseInt(searchParams.get('year') || currentPeriod.year.toString()));
   const [month, setMonth] = useState(parseInt(searchParams.get('month') || currentPeriod.month.toString()));
   const [week, setWeek] = useState(parseInt(searchParams.get('week') || currentPeriod.week.toString()));
@@ -62,6 +70,7 @@ export default function AdminKpiEditPage() {
   const [divisionName, setDivisionName] = useState('');
   const [divisionId, setDivisionId] = useState('');
   const [isAggregated, setIsAggregated] = useState(false);
+  const [attendance, setAttendance] = useState<AttendanceEntry | null>(null);
 
   const backUrl = divisionId ? `/admin/divisi/${divisionId}` : '/admin/divisi';
 
@@ -103,6 +112,7 @@ export default function AdminKpiEditPage() {
       });
       setEntries(entryMap);
       setWeeksFilled(weeksMap);
+      setAttendance(json.attendance ?? null);
     } catch {
       setError('Gagal memuat data KPI');
     } finally {
@@ -175,20 +185,14 @@ export default function AdminKpiEditPage() {
     return { ...t, actual, achievement, weighted };
   });
 
-  const totalScore = scores.reduce((sum, s) => sum + s.weighted, 0);
-  const grade = getGrade(totalScore);
-  const roundedTotal = Math.round(totalScore * 100) / 100;
-
-  const categoryData = Object.entries(
-    scores.reduce((acc, s) => {
-      acc[s.category] = (acc[s.category] || 0) + s.weighted;
-      return acc;
-    }, {} as Record<string, number>)
-  ).map(([name, value]) => ({
-    name,
-    value: Math.round(value * 100) / 100,
-    color: CATEGORY_COLORS[name] || '#6b7280',
-  }));
+  const kpiTotal = scores.reduce((sum, s) => sum + s.weighted, 0);
+  const attendanceScore = viewMode === 'monthly' ? calculateAttendanceScore(attendance) : 0;
+  const finalTotal = viewMode === 'monthly' ? calculateFinalScore(kpiTotal, attendanceScore) : kpiTotal;
+  const grade = getGrade(finalTotal, viewMode === 'monthly' ? 120 : 100);
+  const roundedTotal = Math.round(finalTotal * 100) / 100;
+  const { attendanceRate, lateRate } = getAttendanceRates(viewMode === 'monthly' ? attendance : null);
+  const kehadiranScore = Math.min(attendanceRate / 90, 1) * 15;
+  const keterlambatanScore = (lateRate <= 5 ? 1 : 5 / lateRate) * 5;
 
   const handlePeriodChange = (values: { periodType?: string; year?: number; month?: number; week?: number }) => {
     if (values.year) setYear(values.year);
@@ -299,8 +303,8 @@ export default function AdminKpiEditPage() {
       ) : (
         <>
           {/* Score Summary */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
+          <div className={cn('grid grid-cols-1 gap-6', viewMode === 'monthly' && 'lg:grid-cols-3')}>
+            <div className={viewMode === 'monthly' ? 'lg:col-span-2' : ''}>
               <div className="bg-[#12121a] border border-white/[0.06] rounded-2xl p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-semibold text-gray-400">
@@ -330,13 +334,77 @@ export default function AdminKpiEditPage() {
               </div>
             </div>
 
-            {categoryData.length > 0 && (
-              <KpiPieChart
-                data={categoryData}
-                title="Skor per Kategori"
-                centerLabel="Total"
-                centerValue={roundedTotal.toString()}
-              />
+            {viewMode === 'monthly' && (
+              <div className="bg-[#12121a] border border-white/[0.06] rounded-2xl p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <CalendarCheck className="w-4 h-4 text-green-400" />
+                  <h3 className="text-sm font-semibold text-gray-400">Absensi</h3>
+                  {!attendance && (
+                    <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      Belum Diisi
+                    </span>
+                  )}
+                </div>
+                {attendance ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        {
+                          label: 'Kehadiran',
+                          target: '≥ 90%',
+                          displayValue: `${attendanceRate.toFixed(1)}%`,
+                          perf: Math.min(attendanceRate / 90, 1) * 100,
+                          color: attendanceRate >= 90 ? '#22c55e' : attendanceRate >= 70 ? '#f59e0b' : '#ef4444',
+                          pts: `${kehadiranScore.toFixed(1)}/15`,
+                        },
+                        {
+                          label: 'Keterlambatan',
+                          target: '≤ 5%',
+                          displayValue: `${lateRate.toFixed(1)}%`,
+                          perf: (lateRate <= 5 ? 1 : 5 / lateRate) * 100,
+                          color: lateRate <= 5 ? '#22c55e' : lateRate <= 15 ? '#f59e0b' : '#ef4444',
+                          pts: `${keterlambatanScore.toFixed(1)}/5`,
+                        },
+                      ].map((item) => (
+                        <div key={item.label} className="flex flex-col items-center gap-2">
+                          <div className="relative" style={{ width: 90, height: 90 }}>
+                            <svg viewBox="0 0 36 36" style={{ width: 90, height: 90, transform: 'rotate(-90deg)' }}>
+                              <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
+                              <circle
+                                cx="18" cy="18" r="15.9"
+                                fill="none"
+                                stroke={item.color}
+                                strokeWidth="3"
+                                strokeDasharray={`${item.perf.toFixed(2)} ${(100 - item.perf).toFixed(2)}`}
+                                strokeLinecap="round"
+                              />
+                            </svg>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-sm font-bold text-white">{item.displayValue}</span>
+                            </div>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs font-medium text-gray-300">{item.label}</p>
+                            <p className="text-[10px] text-gray-500">Target {item.target}</p>
+                            <p className="text-xs font-bold mt-0.5" style={{ color: item.color }}>{item.pts} pts</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between">
+                      <span className="text-xs text-gray-500">Total Absensi</span>
+                      <div>
+                        <span className="text-sm font-bold text-green-400">{attendanceScore.toFixed(1)}</span>
+                        <span className="text-xs text-gray-500">/20 pts</span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-4">
+                    <p className="text-xs text-gray-500">Data absensi belum diisi</p>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -463,7 +531,18 @@ export default function AdminKpiEditPage() {
                 </tbody>
                 <tfoot>
                   <tr className="bg-white/[0.02]">
-                    <td colSpan={7} className="px-6 py-4 text-right text-sm font-semibold text-gray-400">Total Skor</td>
+                    <td colSpan={7} className="px-6 py-4 text-right">
+                      {viewMode === 'monthly' ? (
+                        <div>
+                          <span className="text-sm font-semibold text-gray-400">Final Skor</span>
+                          <span className="ml-2 text-xs text-gray-600">
+                            (KPI {kpiTotal.toFixed(1)} + Absensi {attendanceScore.toFixed(1)}) / 120
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-sm font-semibold text-gray-400">Total Skor</span>
+                      )}
+                    </td>
                     <td className="px-4 py-4 text-center">
                       <span className={cn('text-lg font-bold', getGradeColor(grade))}>{roundedTotal}</span>
                     </td>
@@ -477,6 +556,76 @@ export default function AdminKpiEditPage() {
               </table>
             </div>
           </div>
+
+          {/* Attendance Section - Monthly only (read-only for admin, edit via /admin/absensi) */}
+          {viewMode === 'monthly' && (
+            <div className="bg-[#12121a] border border-white/[0.06] rounded-2xl overflow-hidden">
+              <div className="p-5 border-b border-white/[0.06] flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CalendarCheck className="w-4 h-4 text-green-400" />
+                  <h3 className="text-sm font-semibold text-gray-400">Absensi Bulan Ini</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!attendance && (
+                    <span className="text-xs px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      Belum Diisi
+                    </span>
+                  )}
+                  <Link
+                    href={`/admin/absensi?year=${year}&month=${month}`}
+                    className="inline-flex items-center gap-1.5 text-xs text-brand-400 hover:text-brand-300 transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Edit Absensi
+                  </Link>
+                </div>
+              </div>
+
+              {attendance ? (
+                <div className="p-5 space-y-4">
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+                    {[
+                      { label: 'Hari Kerja', value: attendance.hari_kerja },
+                      { label: 'Hadir', value: attendance.hadir },
+                      { label: 'Terlambat', value: attendance.terlambat },
+                      { label: 'Sakit', value: attendance.sakit },
+                      { label: 'Cuti', value: attendance.cuti },
+                    ].map((item) => (
+                      <div key={item.label} className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 text-center">
+                        <div className="text-xl font-bold text-white">{item.value}</div>
+                        <div className="text-xs text-gray-500 mt-0.5">{item.label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="bg-green-500/[0.06] border border-green-500/20 rounded-xl p-4 flex items-center justify-between">
+                    <div>
+                      <span className="text-sm font-semibold text-white">Total Absensi Score</span>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        KPI {kpiTotal.toFixed(1)} + Absensi {attendanceScore.toFixed(1)} = Final {roundedTotal} / 120
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-2xl font-bold text-green-400">{attendanceScore.toFixed(1)}</span>
+                      <span className="text-sm font-normal text-gray-500">/20 pts</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-8 text-center">
+                  <CalendarCheck className="w-10 h-10 text-gray-600 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">Data absensi bulan ini belum diisi.</p>
+                  <Link
+                    href={`/admin/absensi?year=${year}&month=${month}`}
+                    className="inline-flex items-center gap-1.5 mt-3 text-xs text-brand-400 hover:text-brand-300 transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Isi Absensi Sekarang
+                  </Link>
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>

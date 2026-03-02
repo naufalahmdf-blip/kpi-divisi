@@ -15,6 +15,13 @@ const CATEGORY_COLORS: Record<string, string> = {
   Volume: '#f97316',
   Lead: '#ec4899',
   Followers: '#14b8a6',
+  Security: '#dc2626',
+  Recruitment: '#7c3aed',
+  Retention: '#0ea5e9',
+  Compliance: '#fb923c',
+  Engagement: '#a855f7',
+  Culture: '#d946ef',
+  Absensi: '#22c55e',
 };
 
 interface EmployeeScore {
