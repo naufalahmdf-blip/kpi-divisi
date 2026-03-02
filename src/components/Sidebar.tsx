@@ -16,6 +16,7 @@ import {
   X,
   UserCircle,
   TrendingUp,
+  ScrollText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -36,6 +37,7 @@ const adminLinks = [
   { href: '/admin/divisions', label: 'Divisi', icon: Building2 },
   { href: '/admin/templates', label: 'Template KPI', icon: FileSpreadsheet },
   { href: '/admin/divisi', label: 'Performa Divisi', icon: TrendingUp },
+  { href: '/admin/activity-logs', label: 'Activity Log', icon: ScrollText },
 ];
 
 export default function Sidebar({ user }: SidebarProps) {

@@ -98,7 +98,8 @@ INSERT INTO divisions (name, slug) VALUES
   ('Visual Creative', 'visual-creative'),
   ('Video Editor', 'video-editor'),
   ('Sales', 'sales'),
-  ('Community', 'community');
+  ('Community', 'community'),
+  ('Creative', 'creative');
 
 -- ============================================
 -- SEED: KPI TEMPLATES
@@ -156,6 +157,26 @@ CROSS JOIN (VALUES
 ) AS v(category, kpi_name, weight, target, unit, formula_type, sort_order)
 WHERE d.slug = 'community';
 
+-- Creative
+INSERT INTO kpi_templates (division_id, category, kpi_name, weight, target, unit, formula_type, sort_order)
+SELECT d.id, v.category, v.kpi_name, v.weight, v.target, v.unit, v.formula_type, v.sort_order
+FROM divisions d
+CROSS JOIN (VALUES
+  ('Speed', 'On-Time News Post Rate (%)', 30, 90, 'Percentage %', 'higher_better', 1),
+  ('Accuracy', 'Technical Mistakes (per month)', 7, 1, 'Errors', 'lower_better', 2),
+  ('Accuracy', 'False Information Incidents', 8, 0, 'Incidents', 'lower_better', 3),
+  ('Authority', 'Save Rate (%)', 5, 10, 'Percentage %', 'higher_better', 4),
+  ('Authority', 'Share Rate (%)', 5, 5, 'Percentage %', 'higher_better', 5),
+  ('Authority', 'Reel Skip Rate (%)', 5, 50, 'Percentage %', 'lower_better', 6),
+  ('Authority', '3-Second Hold Rate (%)', 5, 40, 'Percentage %', 'higher_better', 7),
+  ('Volume', 'Total Reels (per month)', 4, 90, 'Reels', 'higher_better', 8),
+  ('Volume', 'Motion Videos (per month)', 3, 4, 'Videos', 'higher_better', 9),
+  ('Volume', 'Feed Posts (per month)', 3, 60, 'Posts', 'higher_better', 10),
+  ('Lead', 'Total Verified Leads', 10, 2400, 'Leads', 'higher_better', 11),
+  ('Followers', 'Follower Growth Rate (%)', 15, 15, 'Percentage %', 'higher_better', 12)
+) AS v(category, kpi_name, weight, target, unit, formula_type, sort_order)
+WHERE d.slug = 'creative';
+
 -- ============================================
 -- SEED: ADMIN USER (password: admin123)
 -- Hash generated with bcrypt
@@ -203,6 +224,26 @@ CROSS JOIN (VALUES
 WHERE d.slug = 'community';
 
 -- ============================================
+-- 6. ACTIVITY LOGS TABLE (Audit Trail)
+-- ============================================
+CREATE TABLE activity_logs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  user_name TEXT NOT NULL,
+  user_email TEXT NOT NULL,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT,
+  details JSONB DEFAULT '{}',
+  ip_address TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_activity_logs_created_at ON activity_logs(created_at DESC);
+CREATE INDEX idx_activity_logs_action ON activity_logs(action);
+CREATE INDEX idx_activity_logs_entity ON activity_logs(entity_type);
+
+-- ============================================
 -- RLS POLICIES (Row Level Security)
 -- ============================================
 ALTER TABLE divisions ENABLE ROW LEVEL SECURITY;
@@ -217,3 +258,4 @@ CREATE POLICY "Allow all for service role" ON users FOR ALL USING (true);
 CREATE POLICY "Allow all for service role" ON kpi_templates FOR ALL USING (true);
 CREATE POLICY "Allow all for service role" ON kpi_entries FOR ALL USING (true);
 CREATE POLICY "Allow all for service role" ON sessions FOR ALL USING (true);
+CREATE POLICY "Allow all for service role" ON activity_logs FOR ALL USING (true);

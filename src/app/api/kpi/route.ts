@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { aggregateWeeklyToMonthly } from '@/lib/aggregation';
+import { logActivity, getClientIp } from '@/lib/activity-log';
 
 // GET: Fetch KPI entries for current user or specified user (admin)
 export async function GET(request: NextRequest) {
@@ -144,6 +145,17 @@ export async function POST(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    await logActivity({
+      userId: user.id, userName: user.full_name, userEmail: user.email,
+      action: 'UPDATE', entityType: 'KPI_ENTRY', entityId: userId,
+      details: {
+        period: { type: 'weekly', year, month, week },
+        entries_count: entries.length,
+        ...(userId !== user.id ? { submitted_for: userId } : {}),
+      },
+      ipAddress: getClientIp(request.headers),
+    });
 
     return NextResponse.json({ success: true });
   } catch {

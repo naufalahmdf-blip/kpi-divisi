@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { supabaseAdmin } from '@/lib/supabase';
 import { createSession } from '@/lib/auth';
+import { logActivity, getClientIp } from '@/lib/activity-log';
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,6 +32,13 @@ export async function POST(request: NextRequest) {
     }
 
     const token = await createSession(user.id);
+
+    await logActivity({
+      userId: user.id, userName: user.full_name, userEmail: user.email,
+      action: 'LOGIN', entityType: 'AUTH', entityId: user.id,
+      details: { role: user.role },
+      ipAddress: getClientIp(request.headers),
+    });
 
     const response = NextResponse.json({
       success: true,

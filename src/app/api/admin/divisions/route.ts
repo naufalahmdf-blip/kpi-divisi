@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
+import { logActivity, getClientIp } from '@/lib/activity-log';
 
 export async function GET() {
   const user = await getSession();
@@ -42,6 +43,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    await logActivity({
+      userId: user.id, userName: user.full_name, userEmail: user.email,
+      action: 'CREATE', entityType: 'DIVISION', entityId: data.id,
+      details: { name: data.name, slug: data.slug },
+      ipAddress: getClientIp(request.headers),
+    });
+
     return NextResponse.json({ division: data }, { status: 201 });
   } catch {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
@@ -61,6 +69,8 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'ID dan nama divisi harus diisi' }, { status: 400 });
     }
 
+    const { data: oldDiv } = await supabaseAdmin.from('divisions').select('name').eq('id', id).single();
+
     const slug = name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
     const { error } = await supabaseAdmin
@@ -74,6 +84,13 @@ export async function PUT(request: NextRequest) {
       }
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    await logActivity({
+      userId: user.id, userName: user.full_name, userEmail: user.email,
+      action: 'UPDATE', entityType: 'DIVISION', entityId: id,
+      details: { name: { from: oldDiv?.name, to: name.trim() } },
+      ipAddress: getClientIp(request.headers),
+    });
 
     return NextResponse.json({ success: true });
   } catch {
@@ -104,11 +121,20 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: `Divisi masih memiliki ${count} user. Pindahkan user terlebih dahulu.` }, { status: 400 });
   }
 
+  const { data: divInfo } = await supabaseAdmin.from('divisions').select('name').eq('id', id).single();
+
   const { error } = await supabaseAdmin.from('divisions').delete().eq('id', id);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  await logActivity({
+    userId: user.id, userName: user.full_name, userEmail: user.email,
+    action: 'DELETE', entityType: 'DIVISION', entityId: id,
+    details: { deleted_name: divInfo?.name },
+    ipAddress: getClientIp(request.headers),
+  });
 
   return NextResponse.json({ success: true });
 }

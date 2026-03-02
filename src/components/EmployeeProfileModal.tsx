@@ -9,6 +9,12 @@ const CATEGORY_COLORS: Record<string, string> = {
   Efficiency: '#3b82f6',
   Quality: '#10b981',
   'Creative Development': '#f59e0b',
+  Speed: '#8b5cf6',
+  Accuracy: '#ef4444',
+  Authority: '#06b6d4',
+  Volume: '#f97316',
+  Lead: '#ec4899',
+  Followers: '#14b8a6',
 };
 
 interface EmployeeScore {

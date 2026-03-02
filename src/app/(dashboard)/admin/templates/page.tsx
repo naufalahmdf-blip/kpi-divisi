@@ -30,6 +30,12 @@ const CATEGORY_COLORS: Record<string, string> = {
   Efficiency: 'bg-blue-500/10 text-blue-400',
   Quality: 'bg-emerald-500/10 text-emerald-400',
   'Creative Development': 'bg-amber-500/10 text-amber-400',
+  Speed: 'bg-purple-500/10 text-purple-400',
+  Accuracy: 'bg-red-500/10 text-red-400',
+  Authority: 'bg-cyan-500/10 text-cyan-400',
+  Volume: 'bg-orange-500/10 text-orange-400',
+  Lead: 'bg-pink-500/10 text-pink-400',
+  Followers: 'bg-teal-500/10 text-teal-400',
 };
 
 export default function TemplatesPage() {
