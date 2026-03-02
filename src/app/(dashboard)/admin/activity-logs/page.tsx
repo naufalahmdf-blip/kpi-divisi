@@ -206,7 +206,9 @@ export default function ActivityLogsPage() {
             <p className="text-sm">Belum ada aktivitas tercatat</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Desktop table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-white/[0.06]">
@@ -267,6 +269,46 @@ export default function ActivityLogsPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Mobile cards */}
+          <div className="md:hidden p-4 space-y-3">
+            {logs.map((log) => {
+              const actionBadge = ACTION_BADGES[log.action] || { label: log.action, className: 'bg-gray-500/10 text-gray-400', icon: ScrollText };
+              const entityInfo = ENTITY_ICONS[log.entity_type] || { label: log.entity_type, icon: ScrollText };
+              const ActionIcon = actionBadge.icon;
+              const EntityIcon = entityInfo.icon;
+
+              return (
+                <div key={log.id} className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                        {log.user_name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm text-white font-medium truncate">{log.user_name}</p>
+                      </div>
+                    </div>
+                    <span className="text-[11px] text-gray-500 whitespace-nowrap ml-2">{formatTime(log.created_at)}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium ${actionBadge.className}`}>
+                      <ActionIcon className="w-3 h-3" />
+                      {actionBadge.label}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
+                      <EntityIcon className="w-3.5 h-3.5 text-gray-500" />
+                      {entityInfo.label}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-300 leading-relaxed">
+                    {formatDetails(log.action, log.entity_type, log.details)}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+          </>
         )}
 
         {/* Pagination */}

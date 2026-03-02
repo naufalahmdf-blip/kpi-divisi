@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Building2, Crown, Users, Trophy, TrendingUp } from 'lucide-react';
 import PeriodSelector from '@/components/PeriodSelector';
 import KpiPieChart from '@/components/KpiPieChart';
+import EmployeeProfileModal, { EmployeeData } from '@/components/EmployeeProfileModal';
 import { cn, getGradeColor, getGradeBg, getMonthName, getCurrentPeriod } from '@/lib/utils';
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -19,12 +20,24 @@ const CATEGORY_COLORS: Record<string, string> = {
   Followers: '#14b8a6',
 };
 
+interface MemberScore {
+  kpi_name: string;
+  category: string;
+  weight: number;
+  target: number;
+  actual: number;
+  achievement: number;
+  weighted: number;
+}
+
 interface Member {
   id: string;
   name: string;
+  email: string;
   avatar_url: string | null;
   totalScore: number;
   grade: string;
+  scores: MemberScore[];
 }
 
 interface DivisionData {
@@ -37,6 +50,7 @@ interface DivisionData {
   topEmployee: Member | null;
   userRank: number;
   userScore: number;
+  userRole: string;
 }
 
 export default function DivisiSayaPage() {
@@ -48,6 +62,7 @@ export default function DivisiSayaPage() {
   const [data, setData] = useState<DivisionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedEmployee, setSelectedEmployee] = useState<EmployeeData | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -121,18 +136,34 @@ export default function DivisiSayaPage() {
 
   if (!data) return null;
 
+  const isAdmin = data.userRole === 'admin';
+
+  const handleMemberClick = (member: Member) => {
+    if (!isAdmin) return;
+    setSelectedEmployee({
+      id: member.id,
+      name: member.name,
+      email: member.email,
+      avatar_url: member.avatar_url,
+      division: data.division.name,
+      totalScore: member.totalScore,
+      grade: member.grade,
+      scores: member.scores,
+    });
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <Building2 className="w-7 h-7 text-brand-300" />
-            Divisi Saya
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            {data.division.name} &middot; {periodLabel}
-          </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+        <div className="flex items-center gap-3">
+          <Building2 className="w-6 h-6 sm:w-7 sm:h-7 text-brand-300 flex-shrink-0" />
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-white">Divisi Saya</h1>
+            <p className="text-gray-500 text-xs sm:text-sm">
+              {data.division.name} &middot; {periodLabel}
+            </p>
+          </div>
         </div>
         <PeriodSelector
           periodType={periodType}
@@ -185,7 +216,10 @@ export default function DivisiSayaPage() {
         <div className="lg:col-span-2 space-y-6">
           {/* Top #1 Employee */}
           {data.topEmployee && (
-            <div className="bg-gradient-to-r from-amber-500/10 to-amber-500/5 border border-amber-500/20 rounded-2xl p-6">
+            <div
+              onClick={() => isAdmin && setSelectedEmployee({ id: data.topEmployee!.id, name: data.topEmployee!.name, email: data.topEmployee!.email, avatar_url: data.topEmployee!.avatar_url, division: data.division.name, totalScore: data.topEmployee!.totalScore, grade: data.topEmployee!.grade, scores: data.topEmployee!.scores })}
+              className={cn("bg-gradient-to-r from-amber-500/10 to-amber-500/5 border border-amber-500/20 rounded-2xl p-6", isAdmin && "cursor-pointer hover:border-amber-500/40 transition-colors")}
+            >
               <div className="flex items-center gap-2 mb-4">
                 <Crown className="w-5 h-5 text-amber-400" />
                 <h3 className="text-sm font-semibold text-amber-400">Top #1 Karyawan</h3>
@@ -217,7 +251,11 @@ export default function DivisiSayaPage() {
             </div>
             <div className="divide-y divide-white/[0.04]">
               {data.members.map((member, i) => (
-                <div key={member.id} className="flex items-center gap-3 px-6 py-3.5 hover:bg-white/[0.02] transition-colors">
+                <div
+                  key={member.id}
+                  onClick={() => handleMemberClick(member)}
+                  className={cn("flex items-center gap-3 px-6 py-3.5 hover:bg-white/[0.02] transition-colors", isAdmin && "cursor-pointer")}
+                >
                   <div className={cn(
                     'w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold',
                     i === 0 ? 'bg-amber-500/20 text-amber-400' :
@@ -270,6 +308,12 @@ export default function DivisiSayaPage() {
           )}
         </div>
       </div>
+
+      <EmployeeProfileModal
+        open={!!selectedEmployee}
+        onClose={() => setSelectedEmployee(null)}
+        employee={selectedEmployee}
+      />
     </div>
   );
 }

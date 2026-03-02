@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Users, Building2, Trophy, TrendingUp, Medal, Crown, ChevronRight } from 'lucide-react';
 import PeriodSelector from '@/components/PeriodSelector';
 import KpiPieChart from '@/components/KpiPieChart';
+import EmployeeProfileModal, { EmployeeData } from '@/components/EmployeeProfileModal';
 import { cn, getGrade, getGradeColor, getGradeBg, getMonthName, getCurrentPeriod } from '@/lib/utils';
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -40,7 +41,7 @@ interface DashboardData {
     scores: { kpi_name: string; category: string; weighted: number; achievement: number; weight: number }[];
   };
   divisionSummary: { id: string; name: string; averageScore: number; grade: string; userCount: number }[];
-  topEmployees: { id: string; name: string; division: string; totalScore: number; grade: string }[];
+  topEmployees: { id: string; name: string; email: string; avatar_url: string | null; division: string; totalScore: number; grade: string; scores: { kpi_name: string; category: string; weight: number; target: number; actual: number; achievement: number; weighted: number }[] }[];
   stats: { totalUsers: number; totalDivisions: number };
 }
 
@@ -52,6 +53,7 @@ export default function DashboardPage() {
   const [week, setWeek] = useState(currentPeriod.week);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedEmployee, setSelectedEmployee] = useState<EmployeeData | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -118,10 +120,10 @@ export default function DashboardPage() {
     return (
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-white">Admin Dashboard</h1>
-            <p className="text-gray-500 text-sm mt-1">{periodLabel}</p>
+            <h1 className="text-xl sm:text-2xl font-bold text-white">Admin Dashboard</h1>
+            <p className="text-gray-500 text-xs sm:text-sm mt-1">{periodLabel}</p>
           </div>
           <PeriodSelector
             periodType={periodType}
@@ -249,7 +251,10 @@ export default function DashboardPage() {
           <div className="space-y-4">
             {/* #1 Spotlight */}
             {topOne && (
-              <div className="relative overflow-hidden bg-gradient-to-br from-amber-500/15 to-amber-600/5 border border-amber-500/20 rounded-2xl p-5">
+              <div
+                onClick={() => setSelectedEmployee({ id: topOne.id, name: topOne.name, email: topOne.email, avatar_url: topOne.avatar_url, division: topOne.division, totalScore: topOne.totalScore, grade: topOne.grade, scores: topOne.scores })}
+                className="relative overflow-hidden bg-gradient-to-br from-amber-500/15 to-amber-600/5 border border-amber-500/20 rounded-2xl p-5 cursor-pointer hover:border-amber-500/40 transition-colors"
+              >
                 <div className="absolute -right-4 -top-4 w-24 h-24 bg-amber-500/10 rounded-full blur-2xl" />
                 <div className="relative">
                   <div className="flex items-center gap-1.5 mb-3">
@@ -257,8 +262,13 @@ export default function DashboardPage() {
                     <span className="text-xs font-semibold text-amber-400">#1 Karyawan Terbaik</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
-                      {topOne.name.charAt(0).toUpperCase()}
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-white font-bold text-lg flex-shrink-0 overflow-hidden">
+                      {topOne.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={topOne.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        topOne.name.charAt(0).toUpperCase()
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-base font-bold text-white truncate">{topOne.name}</p>
@@ -285,7 +295,11 @@ export default function DashboardPage() {
               </div>
               <div className="divide-y divide-white/[0.04]">
                 {topRest.map((emp, i) => (
-                  <div key={emp.id} className="flex items-center gap-2.5 px-4 py-3 hover:bg-white/[0.02] transition-colors">
+                  <div
+                    key={emp.id}
+                    onClick={() => setSelectedEmployee({ id: emp.id, name: emp.name, email: emp.email, avatar_url: emp.avatar_url, division: emp.division, totalScore: emp.totalScore, grade: emp.grade, scores: emp.scores })}
+                    className="flex items-center gap-2.5 px-4 py-3 hover:bg-white/[0.02] transition-colors cursor-pointer"
+                  >
                     <div className={cn(
                       'w-7 h-7 rounded-lg flex items-center justify-center font-bold text-[11px] flex-shrink-0',
                       i === 0 ? 'bg-gray-400/20 text-gray-300' :
@@ -294,8 +308,13 @@ export default function DashboardPage() {
                     )}>
                       #{i + 2}
                     </div>
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white font-bold text-[10px] flex-shrink-0">
-                      {emp.name.charAt(0).toUpperCase()}
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white font-bold text-[10px] flex-shrink-0 overflow-hidden">
+                      {emp.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={emp.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        emp.name.charAt(0).toUpperCase()
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-white truncate">{emp.name}</p>
@@ -319,6 +338,12 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+
+        <EmployeeProfileModal
+          open={!!selectedEmployee}
+          onClose={() => setSelectedEmployee(null)}
+          employee={selectedEmployee}
+        />
       </div>
     );
   }
@@ -349,10 +374,10 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Halo, {data.user.full_name}</h1>
-          <p className="text-gray-500 text-sm mt-1">{periodLabel}</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">Halo, {data.user.full_name}</h1>
+          <p className="text-gray-500 text-xs sm:text-sm mt-1">{periodLabel}</p>
         </div>
         <PeriodSelector
           periodType={periodType}

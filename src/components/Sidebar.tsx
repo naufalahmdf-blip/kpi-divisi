@@ -12,14 +12,11 @@ import {
   Users,
   Building2,
   FileSpreadsheet,
-  Menu,
-  X,
   UserCircle,
   TrendingUp,
   ScrollText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
 
 interface SidebarProps {
   user: {
@@ -43,7 +40,6 @@ const adminLinks = [
 export default function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [mobileOpen, setMobileOpen] = useState(false);
 
   const userLinks = [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -84,7 +80,7 @@ export default function Sidebar({ user }: SidebarProps) {
               <Link
                 key={link.href}
                 href={link.href}
-                onClick={() => setMobileOpen(false)}
+                
                 className={cn(
                   'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
                   isActive
@@ -111,7 +107,7 @@ export default function Sidebar({ user }: SidebarProps) {
                   <Link
                     key={link.href}
                     href={link.href}
-                    onClick={() => setMobileOpen(false)}
+                    
                     className={cn(
                       'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
                       isActive
@@ -131,7 +127,7 @@ export default function Sidebar({ user }: SidebarProps) {
 
       {/* User info */}
       <div className="p-4 border-t border-white/[0.06]">
-        <Link href="/profile" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-2 mb-3 hover:bg-white/[0.04] rounded-xl py-1.5 -mx-1 transition-colors">
+        <Link href="/profile" className="flex items-center gap-3 px-2 mb-3 hover:bg-white/[0.04] rounded-xl py-1.5 -mx-1 transition-colors">
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white font-bold text-sm overflow-hidden">
             {user.avatar_url ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -159,37 +155,8 @@ export default function Sidebar({ user }: SidebarProps) {
   );
 
   return (
-    <>
-      {/* Mobile toggle */}
-      <button
-        onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-[#12121a] border border-white/[0.06] rounded-xl text-gray-400"
-      >
-        <Menu className="w-5 h-5" />
-      </button>
-
-      {/* Mobile overlay */}
-      {mobileOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)}>
-          <div
-            className="w-72 h-full bg-[#0c0c14] border-r border-white/[0.06] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setMobileOpen(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            {navContent}
-          </div>
-        </div>
-      )}
-
-      {/* Desktop sidebar */}
-      <aside className="hidden lg:flex w-72 h-screen bg-[#0c0c14] border-r border-white/[0.06] flex-col fixed left-0 top-0 z-40">
-        {navContent}
-      </aside>
-    </>
+    <aside className="hidden lg:flex w-72 h-screen bg-[#0c0c14] border-r border-white/[0.06] flex-col fixed left-0 top-0 z-40">
+      {navContent}
+    </aside>
   );
 }

@@ -141,17 +141,19 @@ export default function AdminDivisionDetailPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div>
-          <Link href="/admin/divisi" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors mb-2">
-            <ArrowLeft className="w-4 h-4" />
+          <Link href="/admin/divisi" className="inline-flex items-center gap-1.5 text-xs sm:text-sm text-gray-500 hover:text-white transition-colors mb-2">
+            <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             Kembali
           </Link>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <Building2 className="w-7 h-7 text-brand-300" />
-            {data.division.name}
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">{periodLabel}</p>
+          <div className="flex items-center gap-3">
+            <Building2 className="w-6 h-6 sm:w-7 sm:h-7 text-brand-300 flex-shrink-0" />
+            <div>
+              <h1 className="text-xl sm:text-2xl font-bold text-white">{data.division.name}</h1>
+              <p className="text-gray-500 text-xs sm:text-sm">{periodLabel}</p>
+            </div>
+          </div>
         </div>
         <PeriodSelector
           periodType={periodType}

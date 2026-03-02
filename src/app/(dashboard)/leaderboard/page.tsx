@@ -128,47 +128,49 @@ export default function LeaderboardPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <Trophy className="w-7 h-7 text-amber-400" />
-            Leaderboard
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            {periodType === 'monthly' ? `${getMonthName(month)} ${year}` : `Minggu ${week}, ${getMonthName(month)} ${year}`}
-          </p>
+      <div className="space-y-3 sm:space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+          <div className="flex items-center gap-3">
+            <Trophy className="w-6 h-6 sm:w-7 sm:h-7 text-amber-400 flex-shrink-0" />
+            <div>
+              <h1 className="text-xl sm:text-2xl font-bold text-white">Leaderboard</h1>
+              <p className="text-gray-500 text-xs sm:text-sm">
+                {periodType === 'monthly' ? `${getMonthName(month)} ${year}` : `Minggu ${week}, ${getMonthName(month)} ${year}`}
+              </p>
+            </div>
+          </div>
+          <PeriodSelector
+            periodType={periodType}
+            year={year}
+            month={month}
+            week={week}
+            onChange={handlePeriodChange}
+          />
         </div>
-        <PeriodSelector
-          periodType={periodType}
-          year={year}
-          month={month}
-          week={week}
-          onChange={handlePeriodChange}
-        />
-      </div>
 
-      {/* Type Toggle */}
-      <div className="flex items-center gap-2 bg-[#12121a] border border-white/[0.06] rounded-xl p-1 w-fit">
-        <button
-          onClick={() => setType('employee')}
-          className={cn(
-            'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
-            type === 'employee' ? 'bg-brand-500 text-white shadow-lg shadow-brand-400/25' : 'text-gray-400 hover:text-white'
-          )}
-        >
-          <Users className="w-4 h-4" />
-          Karyawan
-        </button>
-        <button
-          onClick={() => setType('division')}
-          className={cn(
-            'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
-            type === 'division' ? 'bg-brand-500 text-white shadow-lg shadow-brand-400/25' : 'text-gray-400 hover:text-white'
-          )}
-        >
-          <Building2 className="w-4 h-4" />
-          Divisi
-        </button>
+        {/* Type Toggle */}
+        <div className="flex items-center gap-1 sm:gap-2 bg-[#12121a] border border-white/[0.06] rounded-xl p-1 w-fit">
+          <button
+            onClick={() => setType('employee')}
+            className={cn(
+              'flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all',
+              type === 'employee' ? 'bg-brand-500 text-white shadow-lg shadow-brand-400/25' : 'text-gray-400 hover:text-white'
+            )}
+          >
+            <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            Karyawan
+          </button>
+          <button
+            onClick={() => setType('division')}
+            className={cn(
+              'flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all',
+              type === 'division' ? 'bg-brand-500 text-white shadow-lg shadow-brand-400/25' : 'text-gray-400 hover:text-white'
+            )}
+          >
+            <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            Divisi
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -187,9 +189,9 @@ export default function LeaderboardPage() {
                 </div>
               ) : (
                 employees.map((emp, i) => (
-                  <div key={emp.id} onClick={() => setSelectedEmployee(emp)} className={cn('flex items-center gap-4 p-4 rounded-xl border transition-all duration-200 hover:scale-[1.01] cursor-pointer', getRankBg(i))}>
+                  <div key={emp.id} onClick={() => setSelectedEmployee(emp)} className={cn('flex items-center gap-2.5 sm:gap-4 p-3 sm:p-4 rounded-xl border transition-all duration-200 hover:scale-[1.01] cursor-pointer', getRankBg(i))}>
                     <div className={cn(
-                      'w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg',
+                      'w-9 h-9 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl flex items-center justify-center font-bold text-sm sm:text-lg flex-shrink-0',
                       i === 0 ? 'bg-amber-500/20 text-amber-400' :
                       i === 1 ? 'bg-gray-400/20 text-gray-300' :
                       i === 2 ? 'bg-orange-500/20 text-orange-400' :
@@ -198,14 +200,14 @@ export default function LeaderboardPage() {
                       {getRankIcon(i) || `#${i + 1}`}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-white">{emp.name}</p>
-                      <p className="text-xs text-gray-500">{emp.division}</p>
+                      <p className="text-xs sm:text-sm font-semibold text-white truncate">{emp.name}</p>
+                      <p className="text-[10px] sm:text-xs text-gray-500">{emp.division}</p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-lg font-bold text-white">{emp.totalScore}</p>
-                      <p className={cn('text-xs font-semibold', getGradeColor(emp.grade))}>Grade {emp.grade}</p>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-base sm:text-lg font-bold text-white">{emp.totalScore}</p>
+                      <p className={cn('text-[10px] sm:text-xs font-semibold', getGradeColor(emp.grade))}>Grade {emp.grade}</p>
                     </div>
-                    <div className="w-28 hidden sm:block">
+                    <div className="w-28 hidden sm:block flex-shrink-0">
                       <div className="h-2 bg-white/[0.06] rounded-full overflow-hidden">
                         <div
                           className="h-full rounded-full transition-all duration-700"
@@ -227,21 +229,21 @@ export default function LeaderboardPage() {
                 </div>
               ) : (
                 divisions.map((div, i) => (
-                  <div key={div.id} onClick={() => setSelectedDivisionId(div.id)} className={cn('p-5 rounded-xl border transition-all duration-200 hover:scale-[1.01] cursor-pointer', getRankBg(i))}>
-                    <div className="flex items-center gap-4">
+                  <div key={div.id} onClick={() => setSelectedDivisionId(div.id)} className={cn('p-3 sm:p-5 rounded-xl border transition-all duration-200 hover:scale-[1.01] cursor-pointer', getRankBg(i))}>
+                    <div className="flex items-center gap-2.5 sm:gap-4">
                       <div
-                        className="w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg"
+                        className="w-9 h-9 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl flex items-center justify-center font-bold text-sm sm:text-lg flex-shrink-0"
                         style={{ backgroundColor: DIVISION_COLORS[i % DIVISION_COLORS.length] + '20', color: DIVISION_COLORS[i % DIVISION_COLORS.length] }}
                       >
                         {getRankIcon(i) || `#${i + 1}`}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-white">{div.name}</p>
-                        <p className="text-xs text-gray-500">{div.userCount} anggota</p>
+                        <p className="text-xs sm:text-sm font-semibold text-white truncate">{div.name}</p>
+                        <p className="text-[10px] sm:text-xs text-gray-500">{div.userCount} anggota</p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-lg font-bold text-white">{div.averageScore}</p>
-                        <span className={cn('inline-flex px-2 py-0.5 rounded-md border text-xs font-bold', getGradeBg(div.grade), getGradeColor(div.grade))}>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-base sm:text-lg font-bold text-white">{div.averageScore}</p>
+                        <span className={cn('inline-flex px-1.5 sm:px-2 py-0.5 rounded-md border text-[10px] sm:text-xs font-bold', getGradeBg(div.grade), getGradeColor(div.grade))}>
                           {div.grade}
                         </span>
                       </div>

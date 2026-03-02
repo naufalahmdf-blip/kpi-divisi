@@ -205,41 +205,43 @@ export default function KpiPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <Target className="w-7 h-7 text-brand-300" />
-            KPI Saya
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            {userName} &middot; {divisionName} &middot; {periodLabel}
-          </p>
+      <div className="space-y-3 sm:space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+          <div className="flex items-center gap-3">
+            <Target className="w-6 h-6 sm:w-7 sm:h-7 text-brand-300 flex-shrink-0" />
+            <div>
+              <h1 className="text-xl sm:text-2xl font-bold text-white">KPI Saya</h1>
+              <p className="text-gray-500 text-xs sm:text-sm">
+                {userName} &middot; {divisionName} &middot; {periodLabel}
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-3">
           {/* View Mode Tabs */}
           <div className="flex items-center bg-white/[0.04] border border-white/[0.08] rounded-xl p-1">
             <button
               onClick={() => setViewMode('weekly')}
               className={cn(
-                'flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all',
+                'flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all',
                 viewMode === 'weekly'
                   ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/25'
                   : 'text-gray-400 hover:text-white'
               )}
             >
-              <Calendar className="w-3.5 h-3.5" />
+              <Calendar className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               Mingguan
             </button>
             <button
               onClick={() => setViewMode('monthly')}
               className={cn(
-                'flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all',
+                'flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all',
                 viewMode === 'monthly'
                   ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/25'
                   : 'text-gray-400 hover:text-white'
               )}
             >
-              <CalendarDays className="w-3.5 h-3.5" />
+              <CalendarDays className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               Bulanan
             </button>
           </div>
@@ -295,7 +297,7 @@ export default function KpiPage() {
                 <div className="space-y-3">
                   {scores.map((s) => (
                     <div key={s.id} className="flex items-center gap-3">
-                      <div className="w-40 lg:w-56 text-xs text-gray-400 truncate">{s.kpi_name}</div>
+                      <div className="w-24 sm:w-40 lg:w-56 text-xs text-gray-400 truncate">{s.kpi_name}</div>
                       <div className="flex-1 h-2 bg-white/[0.06] rounded-full overflow-hidden">
                         <div
                           className="h-full rounded-full transition-all duration-500"
@@ -366,7 +368,8 @@ export default function KpiPage() {
               )}
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Desktop table */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-white/[0.06]">
@@ -457,6 +460,69 @@ export default function KpiPage() {
                   </tr>
                 </tfoot>
               </table>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="md:hidden p-4 space-y-3">
+              {scores.map((s) => (
+                <div key={s.id} className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-400">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: CATEGORY_COLORS[s.category] || '#6b7280' }} />
+                      {s.category}
+                    </span>
+                    <span className="text-xs text-gray-500">Bobot: {s.weight}%</span>
+                  </div>
+                  <p className="text-sm font-medium text-white">{s.kpi_name}</p>
+                  <div className="flex items-center gap-3 text-xs text-gray-400">
+                    <span>Target: {s.target} {s.unit}</span>
+                    <span className={cn('font-medium', s.achievement >= 1 ? 'text-emerald-400' : s.achievement >= 0.7 ? 'text-amber-400' : 'text-red-400')}>
+                      Capaian: {formatPercent(s.achievement)}
+                    </span>
+                    <span className="font-bold text-white">Skor: {s.weighted.toFixed(1)}</span>
+                  </div>
+                  {isAggregated ? (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-400">Aktual: <span className="text-white font-medium">{s.actual.toFixed(s.formula_type === 'lower_better' ? 2 : 0)}</span></span>
+                      <span className={cn(
+                        'text-xs font-medium px-2 py-1 rounded-lg',
+                        (weeksFilled[s.id] || 0) >= 4 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
+                      )}>
+                        Minggu: {weeksFilled[s.id] || 0}/5
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <input
+                        type="number"
+                        step="any"
+                        value={entries[s.id]?.actual_value ?? ''}
+                        onChange={(e) => updateEntry(s.id, 'actual_value', e.target.value)}
+                        className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors"
+                        placeholder="Aktual"
+                      />
+                      <input
+                        type="text"
+                        value={entries[s.id]?.notes ?? ''}
+                        onChange={(e) => updateEntry(s.id, 'notes', e.target.value)}
+                        className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors"
+                        placeholder="Catatan..."
+                      />
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Total footer card */}
+              <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 flex items-center justify-between">
+                <span className="text-sm font-semibold text-gray-400">Total Skor</span>
+                <div className="flex items-center gap-2">
+                  <span className={cn('text-lg font-bold', getGradeColor(grade))}>{roundedTotal}</span>
+                  <span className={cn('px-2.5 py-1 rounded-lg border text-sm font-bold', getGradeBg(grade), getGradeColor(grade))}>
+                    {grade}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </>

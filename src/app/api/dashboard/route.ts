@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   // Get all users
   const { data: allUsers } = await supabaseAdmin
     .from('users')
-    .select('id, full_name, division_id, role, divisions(id, name)')
+    .select('id, full_name, email, avatar_url, division_id, role, divisions(id, name)')
     .eq('is_active', true)
     .eq('role', 'user');
 
@@ -126,18 +126,31 @@ export async function GET(request: NextRequest) {
     const userTemplates = (templates || []).filter((t) => t.division_id === u.division_id);
     let total = 0;
 
-    userTemplates.forEach((t) => {
+    const scores = userTemplates.map((t) => {
       const actual = getActual(u.id, t.id);
       const achievement = calculateAchievement(actual, Number(t.target), t.formula_type as 'higher_better' | 'lower_better');
-      total += calculateWeightedScore(achievement, Number(t.weight));
+      const weighted = calculateWeightedScore(achievement, Number(t.weight));
+      total += weighted;
+      return {
+        kpi_name: t.kpi_name,
+        category: t.category,
+        weight: Number(t.weight),
+        target: Number(t.target),
+        actual,
+        achievement,
+        weighted,
+      };
     });
 
     return {
       id: u.id,
       name: u.full_name,
+      email: u.email,
+      avatar_url: u.avatar_url || null,
       division: (u.divisions as unknown as { name: string } | null)?.name || 'N/A',
       totalScore: Math.round(total * 100) / 100,
       grade: getGrade(total),
+      scores,
     };
   });
 

@@ -62,7 +62,7 @@ export default function EmployeeProfileModal({ open, onClose, employee }: Employ
   if (!open || !employee) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-150" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-150" onClick={onClose}>
       <div
         className="bg-[#16161e] border border-white/[0.08] rounded-2xl w-full max-w-lg shadow-2xl shadow-black/50 animate-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}

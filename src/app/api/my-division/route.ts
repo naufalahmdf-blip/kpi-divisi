@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
 
   const members = (users || []).map((u) => {
     let totalScore = 0;
-    (templates || []).forEach((t) => {
+    const scores = (templates || []).map((t) => {
       const actual = getActual(u.id, t.id);
       const achievement = calculateAchievement(actual, Number(t.target), t.formula_type as 'higher_better' | 'lower_better');
       const weighted = calculateWeightedScore(achievement, Number(t.weight));
@@ -95,6 +95,16 @@ export async function GET(request: NextRequest) {
 
       if (!categoryScoresMap[t.category]) categoryScoresMap[t.category] = [];
       categoryScoresMap[t.category].push(weighted);
+
+      return {
+        kpi_name: t.kpi_name,
+        category: t.category,
+        weight: Number(t.weight),
+        target: Number(t.target),
+        actual,
+        achievement,
+        weighted,
+      };
     });
 
     totalDivScore += totalScore;
@@ -102,9 +112,11 @@ export async function GET(request: NextRequest) {
     return {
       id: u.id,
       name: u.full_name,
+      email: u.email,
       avatar_url: u.avatar_url || null,
       totalScore: Math.round(totalScore * 100) / 100,
       grade: getGrade(totalScore),
+      scores,
     };
   });
 
@@ -131,5 +143,6 @@ export async function GET(request: NextRequest) {
     topEmployee,
     userRank,
     userScore,
+    userRole: user.role,
   });
 }
