@@ -275,12 +275,12 @@ export default function AbsensiPage() {
                         valueText={`${attendanceRate.toFixed(0)}%`}
                         target="≥95%"
                       />
-                      <div className="flex flex-col items-center gap-1 text-center px-1">
-                        <p className="text-xs text-gray-500">{att!.hadir}</p>
-                        <p className="text-[9px] text-gray-700">hadir</p>
-                        <div className="h-px w-6 bg-white/[0.08] my-0.5" />
-                        <p className="text-xs text-gray-500">{att!.hari_kerja}</p>
-                        <p className="text-[9px] text-gray-700">hari kerja</p>
+                      <div className="flex flex-col items-center gap-1.5 text-center px-2">
+                        <p className="text-lg font-bold text-white">{att!.hadir}</p>
+                        <p className="text-[10px] text-gray-400">hadir</p>
+                        <div className="h-px w-8 bg-white/10 my-0.5" />
+                        <p className="text-lg font-bold text-white">{att!.hari_kerja}</p>
+                        <p className="text-[10px] text-gray-400">hari kerja</p>
                       </div>
                       <DonutRing
                         fillPct={tepatWaktuRate / 100}
