@@ -202,19 +202,21 @@ export default function AbsensiPage() {
             const att = emp.attendance;
             const hasData = att !== null && att.hari_kerja > 0;
 
-            const attendanceRate = hasData ? (att!.hadir / att!.hari_kerja) * 100 : 0;
-            const lateRate = hasData && att!.hadir > 0 ? (att!.terlambat / att!.hadir) * 100 : 0;
             const tidakHadir = hasData
               ? Math.max(0, att!.hari_kerja - att!.hadir - att!.sakit - att!.cuti)
               : 0;
+            const kehadiranDenom = hasData ? att!.hadir + tidakHadir : 0;
+            const attendanceRate = hasData && kehadiranDenom > 0
+              ? (att!.hadir / kehadiranDenom) * 100
+              : 0;
+            const tepatWaktuRate = hasData && att!.hadir > 0
+              ? ((att!.hadir - att!.terlambat) / att!.hadir) * 100
+              : 0;
 
             const attendanceColor =
-              attendanceRate >= 90 ? '#10b981' : attendanceRate >= 70 ? '#f59e0b' : '#ef4444';
-            const lateColor =
-              lateRate <= 5 ? '#10b981' : lateRate <= 15 ? '#f59e0b' : '#ef4444';
-
-            // For keterlambatan donut: good = full circle (low rate), bad = mostly empty
-            const lateFillPct = lateRate === 0 ? 1 : Math.min(5 / lateRate, 1);
+              attendanceRate >= 95 ? '#10b981' : attendanceRate >= 80 ? '#f59e0b' : '#ef4444';
+            const tepatWaktuColor =
+              tepatWaktuRate >= 90 ? '#10b981' : tepatWaktuRate >= 75 ? '#f59e0b' : '#ef4444';
 
             const stats = hasData
               ? [
@@ -271,7 +273,7 @@ export default function AbsensiPage() {
                         color={attendanceColor}
                         label="Kehadiran"
                         valueText={`${attendanceRate.toFixed(0)}%`}
-                        target="≥90%"
+                        target="≥95%"
                       />
                       <div className="flex flex-col items-center gap-1 text-center px-1">
                         <p className="text-xs text-gray-500">{att!.hadir}</p>
@@ -281,11 +283,11 @@ export default function AbsensiPage() {
                         <p className="text-[9px] text-gray-700">hari kerja</p>
                       </div>
                       <DonutRing
-                        fillPct={lateFillPct}
-                        color={lateColor}
-                        label="Keterlambatan"
-                        valueText={`${lateRate.toFixed(0)}%`}
-                        target="≤5%"
+                        fillPct={tepatWaktuRate / 100}
+                        color={tepatWaktuColor}
+                        label="Tepat Waktu"
+                        valueText={`${tepatWaktuRate.toFixed(0)}%`}
+                        target="≥90%"
                       />
                     </div>
 

@@ -180,9 +180,9 @@ export default function KpiPage() {
   const finalTotal = viewMode === 'monthly' ? calculateFinalScore(kpiTotal, attendanceScore) : kpiTotal;
   const grade = getGrade(finalTotal, viewMode === 'monthly' ? 120 : 100);
   const roundedTotal = Math.round(finalTotal * 100) / 100;
-  const { attendanceRate, lateRate } = getAttendanceRates(viewMode === 'monthly' ? attendance : null);
-  const kehadiranScore = Math.min(attendanceRate / 90, 1) * 15;
-  const keterlambatanScore = (lateRate <= 5 ? 1 : 5 / lateRate) * 5;
+  const { attendanceRate, tepatWaktuRate } = getAttendanceRates(viewMode === 'monthly' ? attendance : null);
+  const kehadiranScore = Math.min(attendanceRate / 95, 1) * 15;
+  const tepatWaktuScore = Math.min(tepatWaktuRate / 90, 1) * 5;
 
   const handlePeriodChange = (values: { periodType?: string; year?: number; month?: number; week?: number }) => {
     if (values.year) setYear(values.year);
@@ -334,19 +334,19 @@ export default function KpiPage() {
                       {[
                         {
                           label: 'Kehadiran',
-                          target: '≥ 90%',
+                          target: '≥ 95%',
                           displayValue: `${attendanceRate.toFixed(1)}%`,
-                          perf: Math.min(attendanceRate / 90, 1) * 100,
-                          color: attendanceRate >= 90 ? '#22c55e' : attendanceRate >= 70 ? '#f59e0b' : '#ef4444',
+                          perf: Math.min(attendanceRate / 95, 1) * 100,
+                          color: attendanceRate >= 95 ? '#22c55e' : attendanceRate >= 80 ? '#f59e0b' : '#ef4444',
                           pts: `${kehadiranScore.toFixed(1)}/15`,
                         },
                         {
-                          label: 'Keterlambatan',
-                          target: '≤ 5%',
-                          displayValue: `${lateRate.toFixed(1)}%`,
-                          perf: (lateRate <= 5 ? 1 : 5 / lateRate) * 100,
-                          color: lateRate <= 5 ? '#22c55e' : lateRate <= 15 ? '#f59e0b' : '#ef4444',
-                          pts: `${keterlambatanScore.toFixed(1)}/5`,
+                          label: 'Tepat Waktu',
+                          target: '≥ 90%',
+                          displayValue: `${tepatWaktuRate.toFixed(1)}%`,
+                          perf: Math.min(tepatWaktuRate / 90, 1) * 100,
+                          color: tepatWaktuRate >= 90 ? '#22c55e' : tepatWaktuRate >= 75 ? '#f59e0b' : '#ef4444',
+                          pts: `${tepatWaktuScore.toFixed(1)}/5`,
                         },
                       ].map((item) => (
                         <div key={item.label} className="flex flex-col items-center gap-2">
