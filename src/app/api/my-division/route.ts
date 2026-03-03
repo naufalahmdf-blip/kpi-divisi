@@ -29,8 +29,7 @@ export async function GET(request: NextRequest) {
     .from('users')
     .select('id, full_name, email, avatar_url, division_id')
     .eq('division_id', user.division_id)
-    .eq('is_active', true)
-    .eq('role', 'user');
+    .eq('is_active', true);
 
   const { data: templates } = await supabaseAdmin
     .from('kpi_templates')

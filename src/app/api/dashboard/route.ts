@@ -18,12 +18,12 @@ export async function GET(request: NextRequest) {
   // Get divisions
   const { data: divisions } = await supabaseAdmin.from('divisions').select('*').order('name');
 
-  // Get all users
+  // Get all active users with a division (admin included — they're also employees)
   const { data: allUsers } = await supabaseAdmin
     .from('users')
     .select('id, full_name, email, avatar_url, division_id, role, divisions(id, name)')
     .eq('is_active', true)
-    .eq('role', 'user');
+    .not('division_id', 'is', null);
 
   // Get templates
   const { data: templates } = await supabaseAdmin.from('kpi_templates').select('*').order('sort_order');
@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
 
   // Pre-compute aggregated actuals for monthly mode
   const userIds = (allUsers || []).map((u) => u.id);
-  if (user.role === 'user' && !userIds.includes(user.id)) {
+  if (user.division_id && !userIds.includes(user.id)) {
     userIds.push(user.id);
   }
 
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
   let myGrade = null;
   let myScores: { kpi_name: string; category: string; weighted: number; achievement: number; weight: number }[] = [];
 
-  if (user.role === 'user' && user.division_id) {
+  if (user.division_id) {
     const myTemplates = (templates || []).filter((t) => t.division_id === user.division_id);
     let kpiTotal = 0;
 
