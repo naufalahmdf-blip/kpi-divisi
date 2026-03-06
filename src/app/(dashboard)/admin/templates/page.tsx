@@ -16,6 +16,7 @@ interface Template {
   unit: string;
   formula_type: string;
   sort_order: number;
+  denominator_template_id: string | null;
   divisions: { id: string; name: string } | null;
 }
 
@@ -71,6 +72,7 @@ export default function TemplatesPage() {
     unit: '',
     formula_type: 'higher_better',
     sort_order: 0,
+    denominator_template_id: '' as string,
   });
 
   const fetchData = async () => {
@@ -98,11 +100,17 @@ export default function TemplatesPage() {
   }, [filterDiv]);
 
   const resetForm = () => {
-    setForm({ division_id: '', category: 'Productivity', kpi_name: '', weight: 0, target: 0, unit: '', formula_type: 'higher_better', sort_order: 0 });
+    setForm({ division_id: '', category: 'Productivity', kpi_name: '', weight: 0, target: 0, unit: '', formula_type: 'higher_better', sort_order: 0, denominator_template_id: '' });
     setEditingId(null);
     setShowForm(false);
     setError('');
   };
+
+  // Templates available for rate linking (same division, non-rate)
+  const linkableTemplates = templates.filter(
+    (t) => t.division_id === form.division_id && !t.denominator_template_id
+  );
+  const isRateForm = !!form.denominator_template_id;
 
   const handleEdit = (t: Template) => {
     setForm({
@@ -114,6 +122,7 @@ export default function TemplatesPage() {
       unit: t.unit,
       formula_type: t.formula_type,
       sort_order: t.sort_order,
+      denominator_template_id: t.denominator_template_id || '',
     });
     setEditingId(t.id);
     setShowForm(true);
@@ -126,7 +135,11 @@ export default function TemplatesPage() {
 
     try {
       const method = editingId ? 'PUT' : 'POST';
-      const body = editingId ? { id: editingId, ...form } : form;
+      const submitForm = {
+        ...form,
+        denominator_template_id: form.denominator_template_id || null,
+      };
+      const body = editingId ? { id: editingId, ...submitForm } : submitForm;
 
       const res = await fetch('/api/admin/templates', {
         method,
@@ -283,6 +296,36 @@ export default function TemplatesPage() {
                   </select>
                 </div>
               </div>
+              {/* Rate KPI linking */}
+              {form.division_id && (
+                <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-gray-300">Rate KPI (Opsional)</label>
+                    {isRateForm && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20">
+                        Rate
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500">Pilih penyebut untuk menghitung rate otomatis. User input angka mentah, sistem hitung rate = input / penyebut × 100%.</p>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Penyebut (pembagi)</label>
+                    <select value={form.denominator_template_id} onChange={(e) => setForm({ ...form, denominator_template_id: e.target.value })}
+                      className="w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-white text-xs focus:outline-none focus:border-brand-400/50 cursor-pointer">
+                      <option value="">-- Tidak ada (bukan rate KPI) --</option>
+                      {linkableTemplates.filter((t) => t.id !== editingId).map((t) => (
+                        <option key={t.id} value={t.id}>{t.kpi_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {isRateForm && (
+                    <p className="text-xs text-brand-300">
+                      Rate = (Input KPI ini / {linkableTemplates.find((t) => t.id === form.denominator_template_id)?.kpi_name || '?'}) × 100%
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">Nama KPI</label>
                 <input type="text" value={form.kpi_name} onChange={(e) => setForm({ ...form, kpi_name: e.target.value })} required
@@ -292,14 +335,14 @@ export default function TemplatesPage() {
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Bobot (%)</label>
-                  <input type="number" value={form.weight || ''} onChange={(e) => setForm({ ...form, weight: parseFloat(e.target.value) || 0 })} required
-                    placeholder="20"
+                  <input type="number" value={form.weight} onChange={(e) => setForm({ ...form, weight: parseFloat(e.target.value) || 0 })}
+                    placeholder="20" min="0"
                     className="w-full px-4 py-3 bg-white/[0.04] border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-brand-400/50 focus:ring-1 focus:ring-brand-400/20 transition-all placeholder:text-gray-600" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Target</label>
-                  <input type="number" step="any" value={form.target || ''} onChange={(e) => setForm({ ...form, target: parseFloat(e.target.value) || 0 })} required
-                    placeholder="100"
+                  <input type="number" step="any" value={form.target} onChange={(e) => setForm({ ...form, target: parseFloat(e.target.value) || 0 })}
+                    placeholder="100" min="0"
                     className="w-full px-4 py-3 bg-white/[0.04] border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-brand-400/50 focus:ring-1 focus:ring-brand-400/20 transition-all placeholder:text-gray-600" />
                 </div>
                 <div>
@@ -397,11 +440,16 @@ export default function TemplatesPage() {
                       <td className="px-4 py-3 text-center text-sm text-gray-400">{t.target}</td>
                       <td className="px-4 py-3 text-center text-xs text-gray-500">{t.unit}</td>
                       <td className="px-4 py-3 text-center">
-                        <span className={cn('text-xs px-2.5 py-1 rounded-lg font-medium',
-                          t.formula_type === 'higher_better' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-blue-500/10 text-blue-400'
-                        )}>
-                          {t.formula_type === 'higher_better' ? 'Higher' : 'Lower'}
-                        </span>
+                        <div className="flex items-center justify-center gap-1">
+                          <span className={cn('text-xs px-2.5 py-1 rounded-lg font-medium',
+                            t.formula_type === 'higher_better' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-blue-500/10 text-blue-400'
+                          )}>
+                            {t.formula_type === 'higher_better' ? 'Higher' : 'Lower'}
+                          </span>
+                          {t.denominator_template_id && (
+                            <span className="text-xs px-2 py-1 rounded-lg font-medium bg-brand-500/10 text-brand-400">Rate</span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-center">
                         <div className="flex items-center justify-center gap-1">
@@ -427,11 +475,16 @@ export default function TemplatesPage() {
                     <span className={cn('text-xs font-medium px-2.5 py-1 rounded-lg', CATEGORY_COLORS[t.category] || 'bg-gray-500/10 text-gray-400')}>
                       {t.category}
                     </span>
-                    <span className={cn('text-xs px-2.5 py-1 rounded-lg font-medium',
-                      t.formula_type === 'higher_better' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-blue-500/10 text-blue-400'
-                    )}>
-                      {t.formula_type === 'higher_better' ? 'Higher' : 'Lower'}
-                    </span>
+                    <div className="flex items-center gap-1">
+                      <span className={cn('text-xs px-2.5 py-1 rounded-lg font-medium',
+                        t.formula_type === 'higher_better' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-blue-500/10 text-blue-400'
+                      )}>
+                        {t.formula_type === 'higher_better' ? 'Higher' : 'Lower'}
+                      </span>
+                      {t.denominator_template_id && (
+                        <span className="text-xs px-2 py-1 rounded-lg font-medium bg-brand-500/10 text-brand-400">Rate</span>
+                      )}
+                    </div>
                   </div>
                   <p className="text-sm font-medium text-white">{t.kpi_name}</p>
                   <div className="flex items-center gap-3 text-xs text-gray-400">

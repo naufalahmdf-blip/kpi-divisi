@@ -7,7 +7,7 @@ import { Save, Loader2, Target, CheckCircle2, AlertCircle, Calendar, CalendarDay
 import PeriodSelector from '@/components/PeriodSelector';
 
 import { useToast } from '@/components/Toast';
-import { cn, calculateAchievement, calculateWeightedScore, getGrade, getGradeColor, getGradeBg, formatPercent, getMonthName, getCurrentPeriod } from '@/lib/utils';
+import { cn, calculateAchievement, calculateWeightedScore, getGrade, getGradeColor, getGradeBg, formatPercent, getMonthName, getCurrentPeriod, getWeeksInMonth, getEffectiveTarget } from '@/lib/utils';
 import { calculateAttendanceScore, calculateFinalScore, getAttendanceRates, type AttendanceEntry } from '@/lib/attendance';
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -39,6 +39,7 @@ interface Template {
   unit: string;
   formula_type: 'higher_better' | 'lower_better';
   sort_order: number;
+  denominator_template_id: string | null;
 }
 
 interface Entry {
@@ -178,11 +179,31 @@ export default function AdminKpiEditPage() {
     }));
   };
 
+  const weeksInMonth = getWeeksInMonth();
+  const isRate = (t: Template) => !!t.denominator_template_id;
+
+  // Compute raw actuals from entries
+  const rawActuals: Record<string, number> = {};
+  for (const t of templates) {
+    rawActuals[t.id] = parseFloat(entries[t.id]?.actual_value) || 0;
+  }
+  // Compute rate display values (raw / denominator as plain ratio)
+  const rateDisplayValues: Record<string, number> = {};
+  for (const t of templates) {
+    if (isRate(t)) {
+      const num = rawActuals[t.id];
+      const den = rawActuals[t.denominator_template_id!] ?? 0;
+      rateDisplayValues[t.id] = den === 0 ? 0 : Math.round((num / den) * 100) / 100;
+    }
+  }
+
   const scores = templates.map((t) => {
-    const actual = parseFloat(entries[t.id]?.actual_value) || 0;
-    const achievement = calculateAchievement(actual, t.target, t.formula_type);
+    const actual = isRate(t) ? rateDisplayValues[t.id] : rawActuals[t.id];
+    const rawInput = rawActuals[t.id];
+    const effectiveTarget = getEffectiveTarget(t.target, t.formula_type, viewMode, weeksInMonth, isRate(t));
+    const achievement = calculateAchievement(actual, effectiveTarget, t.formula_type);
     const weighted = calculateWeightedScore(achievement, t.weight);
-    return { ...t, actual, achievement, weighted };
+    return { ...t, actual, rawInput, achievement, weighted, effectiveTarget };
   });
 
   const kpiTotal = scores.reduce((sum, s) => sum + s.weighted, 0);
@@ -482,22 +503,34 @@ export default function AdminKpiEditPage() {
                       </td>
                       <td className="px-6 py-3 text-sm text-white font-medium">{s.kpi_name}</td>
                       <td className="px-4 py-3 text-center text-sm text-gray-400">{s.weight}%</td>
-                      <td className="px-4 py-3 text-center text-sm text-gray-400">{s.target}</td>
+                      <td className="px-4 py-3 text-center text-sm text-gray-400">{s.effectiveTarget}</td>
                       <td className="px-4 py-3 text-center text-xs text-gray-500">{s.unit}</td>
                       <td className="px-4 py-3">
                         {isAggregated ? (
                           <div className="text-center text-sm font-medium text-white">
-                            {s.actual.toFixed(s.formula_type === 'lower_better' ? 2 : 0)}
+                            {isRate(s) ? (
+                              <div>
+                                <span>{s.rawInput.toFixed(0)}</span>
+                                <span className="text-[10px] text-brand-400 ml-1">= {s.actual.toFixed(2)}</span>
+                              </div>
+                            ) : (
+                              s.actual.toFixed(s.formula_type === 'lower_better' ? 2 : 0)
+                            )}
                           </div>
                         ) : (
-                          <input
-                            type="number"
-                            step="any"
-                            value={entries[s.id]?.actual_value ?? ''}
-                            onChange={(e) => updateEntry(s.id, 'actual_value', e.target.value)}
-                            className="w-24 mx-auto block px-3 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-center text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors"
-                            placeholder="0"
-                          />
+                          <div className="flex flex-col items-center gap-0.5">
+                            <input
+                              type="number"
+                              step="any"
+                              value={entries[s.id]?.actual_value ?? ''}
+                              onChange={(e) => updateEntry(s.id, 'actual_value', e.target.value)}
+                              className="w-24 mx-auto block px-3 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-center text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors"
+                              placeholder="0"
+                            />
+                            {isRate(s) && s.rawInput > 0 && (
+                              <span className="text-[10px] text-brand-400">= {s.actual.toFixed(2)}</span>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-center">

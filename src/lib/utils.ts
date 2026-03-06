@@ -10,6 +10,8 @@ export function calculateAchievement(
   target: number,
   formulaType: 'higher_better' | 'lower_better'
 ): number {
+  if (actual === 0) return 0;
+
   if (target === 0) {
     if (formulaType === 'lower_better') {
       return actual === 0 ? 1 : 0;
@@ -18,9 +20,9 @@ export function calculateAchievement(
   }
 
   if (formulaType === 'higher_better') {
-    return Math.min(actual / target, 1);
+    return actual / target; // no cap — exceeding target gives > 100%
   } else {
-    // lower_better
+    // lower_better: capped at 1 (can't do better than perfect)
     if (actual <= target) return 1;
     return target / actual;
   }
@@ -28,6 +30,30 @@ export function calculateAchievement(
 
 export function calculateWeightedScore(achievement: number, weight: number): number {
   return achievement * weight;
+}
+
+/** Fixed 4 weeks per month. Week 1: 1-7, Week 2: 8-14, Week 3: 15-21, Week 4: 22-end */
+export function getWeeksInMonth(): number {
+  return 4;
+}
+
+/**
+ * For higher_better KPIs in weekly view, divide target by weeksInMonth.
+ * lower_better targets stay the same (averaged, not summed).
+ * Rate KPI targets are percentages — never divided by weeks.
+ */
+export function getEffectiveTarget(
+  target: number,
+  formulaType: string,
+  periodType: string,
+  weeksInMonth: number,
+  isRate: boolean = false
+): number {
+  if (isRate) return target;
+  if (periodType === 'weekly' && formulaType === 'higher_better' && weeksInMonth > 0) {
+    return Math.round((target / weeksInMonth) * 100) / 100;
+  }
+  return target;
 }
 
 /**
@@ -80,6 +106,6 @@ export function getCurrentPeriod() {
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
   const day = now.getDate();
-  const week = Math.ceil(day / 7);
+  const week = Math.min(Math.ceil(day / 7), 4);
   return { year, month, week };
 }

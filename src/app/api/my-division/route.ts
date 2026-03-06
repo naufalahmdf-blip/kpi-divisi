@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
-import { calculateAchievement, calculateWeightedScore, getGrade } from '@/lib/utils';
-import { aggregateAllUsers } from '@/lib/aggregation';
+import { calculateAchievement, calculateWeightedScore, getGrade, getWeeksInMonth, getEffectiveTarget } from '@/lib/utils';
+import { aggregateAllUsers, computeRateActual, isRateKpi } from '@/lib/aggregation';
 import { calculateAttendanceScore, calculateFinalScore } from '@/lib/attendance';
 
 export async function GET(request: NextRequest) {
@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
   const year = parseInt(searchParams.get('year') || new Date().getFullYear().toString());
   const month = parseInt(searchParams.get('month') || (new Date().getMonth() + 1).toString());
   const week = searchParams.get('week') ? parseInt(searchParams.get('week')!) : null;
+  const weeksInMonth = getWeeksInMonth();
 
   const { data: division } = await supabaseAdmin
     .from('divisions')
@@ -86,6 +87,20 @@ export async function GET(request: NextRequest) {
     };
   }
 
+  // Wrap getActual to auto-compute rate KPIs
+  const baseGetActual = getActual;
+  getActual = (userId: string, templateId: string) => {
+    const t = (templates || []).find((tpl) => tpl.id === templateId);
+    if (t && isRateKpi(t)) {
+      const rawValue = baseGetActual(userId, templateId);
+      return computeRateActual(
+        rawValue, t.denominator_template_id!,
+        (tid) => baseGetActual(userId, tid)
+      );
+    }
+    return baseGetActual(userId, templateId);
+  };
+
   let totalDivScore = 0;
   const categoryScoresMap: Record<string, number[]> = {};
 
@@ -93,7 +108,7 @@ export async function GET(request: NextRequest) {
     let kpiTotal = 0;
     const scores = (templates || []).map((t) => {
       const actual = getActual(u.id, t.id);
-      const achievement = calculateAchievement(actual, Number(t.target), t.formula_type as 'higher_better' | 'lower_better');
+      const achievement = calculateAchievement(actual, getEffectiveTarget(Number(t.target), t.formula_type, periodType, weeksInMonth, isRateKpi(t)), t.formula_type as 'higher_better' | 'lower_better');
       const weighted = calculateWeightedScore(achievement, Number(t.weight));
       kpiTotal += weighted;
 

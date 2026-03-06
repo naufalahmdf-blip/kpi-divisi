@@ -44,6 +44,7 @@ CREATE TABLE kpi_templates (
   target NUMERIC(15,4) NOT NULL,
   unit TEXT NOT NULL,
   formula_type TEXT NOT NULL DEFAULT 'higher_better' CHECK (formula_type IN ('higher_better', 'lower_better')),
+  denominator_template_id UUID REFERENCES kpi_templates(id) ON DELETE SET NULL,
   sort_order INT DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
