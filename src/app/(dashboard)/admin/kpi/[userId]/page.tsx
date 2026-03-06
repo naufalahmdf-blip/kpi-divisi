@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Save, Loader2, Target, CheckCircle2, AlertCircle, Calendar, CalendarDays, Info, ArrowLeft, CalendarCheck, ExternalLink } from 'lucide-react';
+import { Save, Loader2, Target, CheckCircle2, AlertCircle, Calendar, CalendarDays, Info, ArrowLeft, CalendarCheck, ExternalLink, RefreshCw, X, CheckCircle, XCircle } from 'lucide-react';
 import PeriodSelector from '@/components/PeriodSelector';
 
 import { useToast } from '@/components/Toast';
@@ -72,12 +72,22 @@ export default function AdminKpiEditPage() {
   const [divisionId, setDivisionId] = useState('');
   const [isAggregated, setIsAggregated] = useState(false);
   const [attendance, setAttendance] = useState<AttendanceEntry | null>(null);
+  const [trelloOtd, setTrelloOtd] = useState<{ otdPercentage: number; onTime: number; late: number; total: number } | null>(null);
+  const [trelloRefreshing, setTrelloRefreshing] = useState(false);
+  const [trelloDetails, setTrelloDetails] = useState<{ name: string; list: string; due: string; completed: string; is_on_time: boolean }[]>([]);
+  const [showTrelloDetail, setShowTrelloDetail] = useState(false);
+
+  const isOtdTemplate = (t: { kpi_name: string }) => {
+    const name = t.kpi_name.toLowerCase();
+    return name.includes('on-time delivery') || name.includes('on time delivery') || name.includes('otd');
+  };
 
   const backUrl = divisionId ? `/admin/divisi/${divisionId}` : '/admin/divisi';
 
   const fetchKpi = useCallback(async () => {
     setLoading(true);
     setSaved(false);
+    setTrelloDetails([]);
     try {
       const params = new URLSearchParams({
         user_id: userId,
@@ -111,6 +121,16 @@ export default function AdminKpiEditPage() {
           weeksMap[e.template_id] = e.weeks_filled;
         }
       });
+      // Auto-fill OTD from Trello
+      const trelloData = json.trello_otd ?? null;
+      setTrelloOtd(trelloData);
+      if (trelloData) {
+        const otdTpl = (json.templates || []).find((t: Template) => isOtdTemplate(t));
+        if (otdTpl) {
+          entryMap[otdTpl.id] = { actual_value: String(trelloData.otdPercentage), notes: entryMap[otdTpl.id]?.notes || '' };
+        }
+      }
+
       setEntries(entryMap);
       setWeeksFilled(weeksMap);
       setAttendance(json.attendance ?? null);
@@ -203,7 +223,8 @@ export default function AdminKpiEditPage() {
     const effectiveTarget = getEffectiveTarget(t.target, t.formula_type, viewMode, weeksInMonth, isRate(t));
     const achievement = calculateAchievement(actual, effectiveTarget, t.formula_type);
     const weighted = calculateWeightedScore(achievement, t.weight);
-    return { ...t, actual, rawInput, achievement, weighted, effectiveTarget };
+    const denominator = isRate(t) ? (rawActuals[t.denominator_template_id!] ?? 0) : 0;
+    return { ...t, actual, rawInput, denominator, achievement, weighted, effectiveTarget };
   });
 
   const kpiTotal = scores.reduce((sum, s) => sum + s.weighted, 0);
@@ -219,6 +240,48 @@ export default function AdminKpiEditPage() {
     if (values.year) setYear(values.year);
     if (values.month) setMonth(values.month);
     if (values.week) setWeek(values.week);
+  };
+
+  const refreshTrelloOtd = async () => {
+    if (!divisionId) return;
+    setTrelloRefreshing(true);
+    try {
+      const res = await fetch(`/api/trello/otd?division_id=${divisionId}&year=${year}&month=${month}`);
+      if (res.ok) {
+        const json = await res.json();
+        const newOtd = { otdPercentage: json.otd_percentage, onTime: json.on_time, late: json.late, total: json.total };
+        setTrelloOtd(newOtd);
+        const otdTpl = templates.find((t) => isOtdTemplate(t));
+        if (otdTpl) {
+          setEntries((prev) => ({
+            ...prev,
+            [otdTpl.id]: { actual_value: String(newOtd.otdPercentage), notes: prev[otdTpl.id]?.notes || '' },
+          }));
+        }
+        toast('Data Trello OTD berhasil diperbarui', 'success');
+      } else {
+        toast('Gagal mengambil data Trello', 'error');
+      }
+    } catch {
+      toast('Gagal mengambil data Trello', 'error');
+    } finally {
+      setTrelloRefreshing(false);
+    }
+  };
+
+  const openTrelloDetail = async () => {
+    if (!divisionId) return;
+    setShowTrelloDetail(true);
+    if (trelloDetails.length === 0) {
+      try {
+        const params = new URLSearchParams({ division_id: divisionId, year: year.toString(), month: month.toString() });
+        const res = await fetch(`/api/trello/otd?${params}`);
+        if (res.ok) {
+          const data = await res.json();
+          setTrelloDetails(data.details || []);
+        }
+      } catch { /* ignore */ }
+    }
   };
 
   const periodLabel = viewMode === 'monthly'
@@ -511,7 +574,20 @@ export default function AdminKpiEditPage() {
                             {isRate(s) ? (
                               <div>
                                 <span>{s.rawInput.toFixed(0)}</span>
-                                <span className="text-[10px] text-brand-400 ml-1">= {s.actual.toFixed(2)}</span>
+                                <span className="text-sm text-gray-500 ml-1">÷ {s.denominator.toFixed(0)}</span>
+                                <span className="text-sm text-brand-400 ml-1">= {s.actual.toFixed(2)}</span>
+                              </div>
+                            ) : isOtdTemplate(s) && trelloOtd ? (
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span>{s.actual.toFixed(1)}%</span>
+                                <div className="flex items-center gap-1.5">
+                                  <button type="button" onClick={openTrelloDetail} className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1">
+                                    Trello: {trelloOtd.onTime}/{trelloOtd.total} on-time <ExternalLink className="w-3 h-3" />
+                                  </button>
+                                  <button type="button" onClick={refreshTrelloOtd} disabled={trelloRefreshing} className="text-blue-400 hover:text-blue-300 transition-colors">
+                                    <RefreshCw className={cn('w-3 h-3', trelloRefreshing && 'animate-spin')} />
+                                  </button>
+                                </div>
                               </div>
                             ) : (
                               s.actual.toFixed(s.formula_type === 'lower_better' ? 2 : 0)
@@ -519,16 +595,34 @@ export default function AdminKpiEditPage() {
                           </div>
                         ) : (
                           <div className="flex flex-col items-center gap-0.5">
-                            <input
-                              type="number"
-                              step="any"
-                              value={entries[s.id]?.actual_value ?? ''}
-                              onChange={(e) => updateEntry(s.id, 'actual_value', e.target.value)}
-                              className="w-24 mx-auto block px-3 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-center text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors"
-                              placeholder="0"
-                            />
-                            {isRate(s) && s.rawInput > 0 && (
-                              <span className="text-[10px] text-brand-400">= {s.actual.toFixed(2)}</span>
+                            {isOtdTemplate(s) && trelloOtd ? (
+                              <>
+                                <div className="w-24 mx-auto px-3 py-1.5 bg-blue-500/[0.08] border border-blue-500/20 rounded-lg text-center text-sm text-white font-medium">
+                                  {trelloOtd.otdPercentage}
+                                </div>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <button type="button" onClick={openTrelloDetail} className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1">
+                                    Trello: {trelloOtd.onTime}/{trelloOtd.total} on-time <ExternalLink className="w-3 h-3" />
+                                  </button>
+                                  <button type="button" onClick={refreshTrelloOtd} disabled={trelloRefreshing} className="text-blue-400 hover:text-blue-300 transition-colors">
+                                    <RefreshCw className={cn('w-3 h-3', trelloRefreshing && 'animate-spin')} />
+                                  </button>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  value={entries[s.id]?.actual_value ?? ''}
+                                  onChange={(e) => updateEntry(s.id, 'actual_value', e.target.value)}
+                                  className="w-24 mx-auto block px-3 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-center text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors"
+                                  placeholder="0"
+                                />
+                                {isRate(s) && s.rawInput > 0 && (
+                                  <span className="text-sm text-brand-400">{s.rawInput.toFixed(0)} ÷ {s.denominator.toFixed(0)} = {s.actual.toFixed(2)}</span>
+                                )}
+                              </>
                             )}
                           </div>
                         )}
@@ -660,6 +754,121 @@ export default function AdminKpiEditPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Trello OTD Detail Modal */}
+      {showTrelloDetail && trelloOtd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowTrelloDetail(false)}>
+          <div
+            className="bg-[#16161e] border border-white/[0.08] rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl shadow-black/50 animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-5 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
+              <div>
+                <h2 className="text-lg font-bold text-white">Trello OTD Detail</h2>
+                <p className="text-xs text-gray-500 mt-0.5">{divisionName} — {getMonthName(month)} {year}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={async () => { await refreshTrelloOtd(); setTrelloDetails([]); const params = new URLSearchParams({ division_id: divisionId, year: year.toString(), month: month.toString() }); try { const res = await fetch(`/api/trello/otd?${params}`); if (res.ok) { const data = await res.json(); setTrelloDetails(data.details || []); } } catch {} }}
+                  disabled={trelloRefreshing}
+                  className="text-gray-400 hover:text-white transition-colors p-1"
+                >
+                  <RefreshCw className={cn('w-4 h-4', trelloRefreshing && 'animate-spin')} />
+                </button>
+                <button onClick={() => setShowTrelloDetail(false)} className="text-gray-500 hover:text-white transition-colors p-1">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* KPI Summary */}
+            <div className="grid grid-cols-4 gap-3 p-5 border-b border-white/[0.06] flex-shrink-0">
+              <div className="bg-blue-500/[0.08] border border-blue-500/20 rounded-xl p-3 text-center">
+                <p className="text-[10px] text-blue-400 font-semibold uppercase tracking-wider">Total Card</p>
+                <p className="text-2xl font-bold text-blue-400 mt-1">{trelloOtd.total}</p>
+              </div>
+              <div className="bg-emerald-500/[0.08] border border-emerald-500/20 rounded-xl p-3 text-center">
+                <p className="text-[10px] text-emerald-400 font-semibold uppercase tracking-wider">On Time</p>
+                <p className="text-2xl font-bold text-emerald-400 mt-1">{trelloOtd.onTime}</p>
+              </div>
+              <div className="bg-red-500/[0.08] border border-red-500/20 rounded-xl p-3 text-center">
+                <p className="text-[10px] text-red-400 font-semibold uppercase tracking-wider">Terlambat</p>
+                <p className="text-2xl font-bold text-red-400 mt-1">{trelloOtd.late}</p>
+              </div>
+              <div className={cn(
+                "border rounded-xl p-3 text-center",
+                trelloOtd.otdPercentage >= 80 ? "bg-emerald-500/[0.08] border-emerald-500/20" :
+                trelloOtd.otdPercentage >= 60 ? "bg-amber-500/[0.08] border-amber-500/20" :
+                "bg-red-500/[0.08] border-red-500/20"
+              )}>
+                <p className={cn(
+                  "text-[10px] font-semibold uppercase tracking-wider",
+                  trelloOtd.otdPercentage >= 80 ? "text-emerald-400" : trelloOtd.otdPercentage >= 60 ? "text-amber-400" : "text-red-400"
+                )}>% OTD</p>
+                <p className={cn(
+                  "text-2xl font-bold mt-1",
+                  trelloOtd.otdPercentage >= 80 ? "text-emerald-400" : trelloOtd.otdPercentage >= 60 ? "text-amber-400" : "text-red-400"
+                )}>{trelloOtd.otdPercentage}%</p>
+              </div>
+            </div>
+
+            {/* Card Table */}
+            <div className="overflow-auto flex-1">
+              {trelloDetails.length === 0 ? (
+                <div className="p-12 text-center">
+                  <Loader2 className="w-6 h-6 text-gray-500 animate-spin mx-auto mb-2" />
+                  <p className="text-gray-500 text-sm">Memuat detail card...</p>
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-white/[0.06]">
+                      <th className="px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Card</th>
+                      <th className="px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">List</th>
+                      <th className="px-5 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Due Date</th>
+                      <th className="px-5 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Tgl Aktivitas</th>
+                      <th className="px-5 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Selisih</th>
+                      <th className="px-5 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trelloDetails
+                      .sort((a, b) => new Date(b.due).getTime() - new Date(a.due).getTime())
+                      .map((card, i) => {
+                        const due = new Date(card.due);
+                        const act = new Date(card.completed);
+                        const diffDays = Math.ceil((act.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+                        return (
+                          <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                            <td className="px-5 py-3 text-white font-medium max-w-[250px] truncate">{card.name}</td>
+                            <td className="px-5 py-3 text-gray-500">{card.list}</td>
+                            <td className="px-5 py-3 text-center text-gray-400">{due.toLocaleDateString('id-ID')}</td>
+                            <td className="px-5 py-3 text-center text-gray-400">{act.toLocaleDateString('id-ID')}</td>
+                            <td className="px-5 py-3 text-center">
+                              <span className={cn('font-semibold', card.is_on_time ? 'text-emerald-400' : 'text-red-400')}>
+                                {diffDays <= 1 ? `${diffDays}d` : `+${diffDays}d`}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 text-center">
+                              <span className={cn(
+                                'inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg',
+                                card.is_on_time ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                              )}>
+                                {card.is_on_time ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                                {card.is_on_time ? 'ON TIME' : 'TERLAMBAT'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { aggregateWeeklyToMonthly, computeRateActual, isRateKpi } from '@/lib/aggregation';
 import { logActivity, getClientIp } from '@/lib/activity-log';
 import { calculateAttendanceScore } from '@/lib/attendance';
+import { fetchTrelloOtd } from '@/lib/trello';
 
 // GET: Fetch KPI entries for current user or specified user (admin)
 export async function GET(request: NextRequest) {
@@ -72,6 +73,19 @@ export async function GET(request: NextRequest) {
       aggMap[a.template_id] = a.actual_value;
     }
 
+    // Auto-inject Trello OTD for On-Time Delivery templates
+    const otdTemplate = (templates || []).find((t) => {
+      const name = t.kpi_name.toLowerCase();
+      return name.includes('on-time delivery') || name.includes('on time delivery') || name.includes('otd');
+    });
+    let trelloOtd: { otdPercentage: number; onTime: number; late: number; total: number } | null = null;
+    if (otdTemplate) {
+      trelloOtd = await fetchTrelloOtd(targetUser.division_id, year, month);
+      if (trelloOtd) {
+        aggMap[otdTemplate.id] = trelloOtd.otdPercentage;
+      }
+    }
+
     // Compute rate KPI display values
     const rateDisplayValues: Record<string, number> = {};
     for (const t of (templates || [])) {
@@ -100,6 +114,7 @@ export async function GET(request: NextRequest) {
       is_aggregated: true,
       attendance: attendanceData ?? null,
       attendanceScore,
+      trello_otd: trelloOtd,
     });
   }
 
@@ -135,6 +150,16 @@ export async function GET(request: NextRequest) {
     return { ...e, rate_display: rateDisplay };
   });
 
+  // Auto-fetch Trello OTD for weekly view too
+  const weeklyOtdTemplate = (templates || []).find((t) => {
+    const name = t.kpi_name.toLowerCase();
+    return name.includes('on-time delivery') || name.includes('on time delivery') || name.includes('otd');
+  });
+  let weeklyTrelloOtd: { otdPercentage: number; onTime: number; late: number; total: number } | null = null;
+  if (weeklyOtdTemplate) {
+    weeklyTrelloOtd = await fetchTrelloOtd(targetUser.division_id, year, month);
+  }
+
   return NextResponse.json({
     user: targetUser,
     templates: templates || [],
@@ -142,6 +167,7 @@ export async function GET(request: NextRequest) {
     period: { type: 'weekly', year, month, week },
     attendance: attendanceData ?? null,
     attendanceScore,
+    trello_otd: weeklyTrelloOtd,
   });
 }
 

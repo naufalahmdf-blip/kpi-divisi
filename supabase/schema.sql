@@ -12,6 +12,7 @@ CREATE TABLE divisions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL UNIQUE,
   slug TEXT NOT NULL UNIQUE,
+  trello_board_id TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
