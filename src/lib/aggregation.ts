@@ -93,3 +93,8 @@ export function computeRateActual(
 export function isRateKpi(template: { denominator_template_id?: string | null }): boolean {
   return !!template.denominator_template_id;
 }
+
+export function isOtdKpi(template: { kpi_name: string }): boolean {
+  const name = template.kpi_name.toLowerCase();
+  return name.includes('on-time delivery') || name.includes('on time delivery') || name.includes('otd');
+}

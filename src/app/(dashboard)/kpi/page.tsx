@@ -70,7 +70,7 @@ export default function KpiPage() {
   const [trelloLoading, setTrelloLoading] = useState(false);
   const [trelloInfo, setTrelloInfo] = useState<{
     otd: number; onTime: number; late: number; total: number;
-    details: { name: string; list: string; due: string; completed: string; is_on_time: boolean }[];
+    details: { name: string; list: string; board: string; due: string; completed: string; is_on_time: boolean; original_due: string | null; due_changed: boolean }[];
   } | null>(null);
   const [showTrelloDetail, setShowTrelloDetail] = useState(false);
 
@@ -241,7 +241,7 @@ export default function KpiPage() {
   const scores = templates.map((t) => {
     const actual = isRate(t) ? rateDisplayValues[t.id] : rawActuals[t.id];
     const rawInput = rawActuals[t.id];
-    const effectiveTarget = getEffectiveTarget(t.target, t.formula_type, viewMode, weeksInMonth, isRate(t));
+    const effectiveTarget = getEffectiveTarget(t.target, t.formula_type, viewMode, weeksInMonth, isRate(t), isOtdTemplate(t));
     const achievement = calculateAchievement(actual, effectiveTarget, t.formula_type);
     const weighted = calculateWeightedScore(achievement, t.weight);
     const denominator = isRate(t) ? (rawActuals[t.denominator_template_id!] ?? 0) : 0;
@@ -785,7 +785,7 @@ export default function KpiPage() {
       {showTrelloDetail && trelloInfo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowTrelloDetail(false)}>
           <div
-            className="bg-[#16161e] border border-white/[0.08] rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl shadow-black/50 animate-in zoom-in-95 duration-150"
+            className="bg-[#16161e] border border-white/[0.08] rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl shadow-black/50 animate-in zoom-in-95 duration-150"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -838,12 +838,13 @@ export default function KpiPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-white/[0.06]">
-                      <th className="px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Card</th>
-                      <th className="px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">List</th>
-                      <th className="px-5 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Due Date</th>
-                      <th className="px-5 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Tgl Aktivitas</th>
-                      <th className="px-5 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Selisih</th>
-                      <th className="px-5 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Card</th>
+                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Board</th>
+                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">List</th>
+                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Due Date</th>
+                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Tgl Aktivitas</th>
+                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Selisih</th>
+                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -853,18 +854,28 @@ export default function KpiPage() {
                         const due = new Date(card.due);
                         const act = new Date(card.completed);
                         const diffDays = Math.ceil((act.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+                        const origDue = card.original_due ? new Date(card.original_due) : null;
                         return (
-                          <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
-                            <td className="px-5 py-3 text-white font-medium max-w-[250px] truncate">{card.name}</td>
-                            <td className="px-5 py-3 text-gray-500">{card.list}</td>
-                            <td className="px-5 py-3 text-center text-gray-400">{due.toLocaleDateString('id-ID')}</td>
-                            <td className="px-5 py-3 text-center text-gray-400">{act.toLocaleDateString('id-ID')}</td>
-                            <td className="px-5 py-3 text-center">
+                          <tr key={i} className={cn('border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors', card.due_changed && 'bg-amber-500/[0.03]')}>
+                            <td className="px-4 py-3 text-white font-medium max-w-[200px] truncate">{card.name}</td>
+                            <td className="px-4 py-3 text-gray-500 text-xs max-w-[120px] truncate">{card.board}</td>
+                            <td className="px-4 py-3 text-gray-500">{card.list}</td>
+                            <td className="px-4 py-3 text-center">
+                              <div className="text-gray-400">{due.toLocaleDateString('id-ID')}</div>
+                              {card.due_changed && origDue && (
+                                <div className="text-[10px] text-amber-400 flex items-center justify-center gap-0.5 mt-0.5" title={`Due date awal: ${origDue.toLocaleDateString('id-ID')}`}>
+                                  <AlertCircle className="w-2.5 h-2.5" />
+                                  <span>awal: {origDue.toLocaleDateString('id-ID')}</span>
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-center text-gray-400">{act.toLocaleDateString('id-ID')}</td>
+                            <td className="px-4 py-3 text-center">
                               <span className={cn('font-semibold', card.is_on_time ? 'text-emerald-400' : 'text-red-400')}>
                                 {diffDays <= 1 ? `${diffDays}d` : `+${diffDays}d`}
                               </span>
                             </td>
-                            <td className="px-5 py-3 text-center">
+                            <td className="px-4 py-3 text-center">
                               <span className={cn(
                                 'inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg',
                                 card.is_on_time ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'

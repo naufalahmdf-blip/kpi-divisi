@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { calculateAchievement, calculateWeightedScore, getGrade, getWeeksInMonth, getEffectiveTarget } from '@/lib/utils';
-import { aggregateAllUsers, computeRateActual, isRateKpi } from '@/lib/aggregation';
+import { aggregateAllUsers, computeRateActual, isRateKpi, isOtdKpi } from '@/lib/aggregation';
 import { calculateAttendanceScore, calculateFinalScore } from '@/lib/attendance';
 
 export async function GET(request: NextRequest) {
@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
     let kpiTotal = 0;
     const scores = (templates || []).map((t) => {
       const actual = getActual(u.id, t.id);
-      const achievement = calculateAchievement(actual, getEffectiveTarget(Number(t.target), t.formula_type, periodType, weeksInMonth, isRateKpi(t)), t.formula_type as 'higher_better' | 'lower_better');
+      const achievement = calculateAchievement(actual, getEffectiveTarget(Number(t.target), t.formula_type, periodType, weeksInMonth, isRateKpi(t), isOtdKpi(t)), t.formula_type as 'higher_better' | 'lower_better');
       const weighted = calculateWeightedScore(achievement, Number(t.weight));
       kpiTotal += weighted;
 

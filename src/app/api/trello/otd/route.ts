@@ -15,21 +15,33 @@ interface TrelloCard {
 const TRELLO_API_KEY = process.env.TRELLO_API_KEY || '';
 const TRELLO_TOKEN = process.env.TRELLO_TOKEN || '';
 
+interface TrelloAction {
+  type: string;
+  date: string;
+  data: {
+    card?: { id?: string; name?: string; due?: string };
+    old?: { due?: string | null };
+  };
+}
+
 async function fetchBoardData(boardId: string) {
-  // Fetch lists
-  const listsRes = await fetch(
-    `https://api.trello.com/1/boards/${boardId}/lists?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}`
-  );
+  // Fetch board info + lists in parallel
+  const [boardRes, listsRes, cardsRes] = await Promise.all([
+    fetch(`https://api.trello.com/1/boards/${boardId}?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}&fields=name`),
+    fetch(`https://api.trello.com/1/boards/${boardId}/lists?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}`),
+    fetch(`https://api.trello.com/1/boards/${boardId}/cards/all?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}&fields=name,due,dueComplete,dateLastActivity,idList,closed`),
+  ]);
+
   if (!listsRes.ok) throw new Error(`Gagal mengambil data list dari board ${boardId}`);
+  if (!cardsRes.ok) throw new Error(`Gagal mengambil data card dari board ${boardId}`);
+
+  const boardInfo = boardRes.ok ? await boardRes.json() : { name: boardId };
+  const boardName: string = boardInfo.name;
+
   const lists: { id: string; name: string }[] = await listsRes.json();
   const listMap: Record<string, string> = {};
   lists.forEach((l) => (listMap[l.id] = l.name));
 
-  // Fetch all cards (including archived)
-  const cardsRes = await fetch(
-    `https://api.trello.com/1/boards/${boardId}/cards/all?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}&fields=name,due,dueComplete,dateLastActivity,idList,closed`
-  );
-  if (!cardsRes.ok) throw new Error(`Gagal mengambil data card dari board ${boardId}`);
   const allCards: TrelloCard[] = await cardsRes.json();
 
   // Filter: cards with due date that are "done"
@@ -37,7 +49,34 @@ async function fetchBoardData(boardId: string) {
     (c) => c.due && (c.dueComplete || (listMap[c.idList] || '').toLowerCase().includes('done'))
   );
 
-  return { doneCards, listMap };
+  return { doneCards, listMap, boardName };
+}
+
+/**
+ * Fetch original due date for a card by checking its action history.
+ * Returns the first due date that was set, or null if due was never changed.
+ */
+async function fetchOriginalDue(cardId: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://api.trello.com/1/cards/${cardId}/actions?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}&filter=updateCard:due&limit=50`
+    );
+    if (!res.ok) return null;
+    const actions: TrelloAction[] = await res.json();
+
+    // Need at least 2 actions to indicate a change:
+    // action[oldest] = first time due was set (old.due = null, card.due = first date)
+    // action[newer]  = due date changed (old.due = first date, card.due = new date)
+    if (actions.length < 2) return null;
+
+    // Actions are newest-first; the oldest action has the first due date set
+    const oldest = actions[actions.length - 1];
+    // old.due could be null (first time setting), so use card.due as the original
+    const originalDue = oldest?.data?.old?.due ?? oldest?.data?.card?.due ?? null;
+    return originalDue;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -78,11 +117,11 @@ export async function GET(request: NextRequest) {
     // Fetch all boards in parallel
     const boardResults = await Promise.all(boardIds.map(fetchBoardData));
 
-    // Merge all done cards with their list maps
-    const allDoneCards: { card: TrelloCard; listName: string }[] = [];
-    for (const { doneCards, listMap } of boardResults) {
+    // Merge all done cards with their list maps and board names
+    const allDoneCards: { card: TrelloCard; listName: string; boardName: string }[] = [];
+    for (const { doneCards, listMap, boardName } of boardResults) {
       for (const card of doneCards) {
-        allDoneCards.push({ card, listName: listMap[card.idList] || 'Unknown' });
+        allDoneCards.push({ card, listName: listMap[card.idList] || 'Unknown', boardName });
       }
     }
 
@@ -95,11 +134,16 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Fetch original due dates in parallel for all filtered cards
+    const originalDues = await Promise.all(
+      filtered.map(({ card }) => fetchOriginalDue(card.id))
+    );
+
     // Compute OTD
     let onTime = 0;
     let late = 0;
 
-    const details = filtered.map(({ card, listName }) => {
+    const details = filtered.map(({ card, listName, boardName }, idx) => {
       const due = new Date(card.due!);
       const act = new Date(card.dateLastActivity);
       const buffer = new Date(due);
@@ -109,12 +153,17 @@ export async function GET(request: NextRequest) {
       if (isOnTime) onTime++;
       else late++;
 
+      const originalDue = originalDues[idx];
+
       return {
         name: card.name,
         list: listName,
+        board: boardName,
         due: due.toISOString(),
         completed: act.toISOString(),
         is_on_time: isOnTime,
+        original_due: originalDue,
+        due_changed: !!originalDue,
       };
     });
 

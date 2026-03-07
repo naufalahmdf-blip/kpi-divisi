@@ -47,9 +47,10 @@ export function getEffectiveTarget(
   formulaType: string,
   periodType: string,
   weeksInMonth: number,
-  isRate: boolean = false
+  isRate: boolean = false,
+  isFixedTarget: boolean = false
 ): number {
-  if (isRate) return target;
+  if (isRate || isFixedTarget) return target;
   if (periodType === 'weekly' && formulaType === 'higher_better' && weeksInMonth > 0) {
     return Math.round((target / weeksInMonth) * 100) / 100;
   }
