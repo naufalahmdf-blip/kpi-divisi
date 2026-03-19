@@ -9,7 +9,14 @@ interface TrelloCard {
   dueComplete: boolean;
   dateLastActivity: string;
   idList: string;
+  idMembers: string[];
   closed: boolean;
+}
+
+interface TrelloMember {
+  id: string;
+  fullName: string;
+  username: string;
 }
 
 const TRELLO_API_KEY = process.env.TRELLO_API_KEY || '';
@@ -25,11 +32,12 @@ interface TrelloAction {
 }
 
 async function fetchBoardData(boardId: string) {
-  // Fetch board info + lists in parallel
-  const [boardRes, listsRes, cardsRes] = await Promise.all([
+  // Fetch board info + lists + cards + members in parallel
+  const [boardRes, listsRes, cardsRes, membersRes] = await Promise.all([
     fetch(`https://api.trello.com/1/boards/${boardId}?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}&fields=name`),
     fetch(`https://api.trello.com/1/boards/${boardId}/lists?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}`),
-    fetch(`https://api.trello.com/1/boards/${boardId}/cards/all?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}&fields=name,due,dueComplete,dateLastActivity,idList,closed`),
+    fetch(`https://api.trello.com/1/boards/${boardId}/cards/all?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}&fields=name,due,dueComplete,dateLastActivity,idList,idMembers,closed`),
+    fetch(`https://api.trello.com/1/boards/${boardId}/members?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}&fields=fullName,username`),
   ]);
 
   if (!listsRes.ok) throw new Error(`Gagal mengambil data list dari board ${boardId}`);
@@ -42,6 +50,11 @@ async function fetchBoardData(boardId: string) {
   const listMap: Record<string, string> = {};
   lists.forEach((l) => (listMap[l.id] = l.name));
 
+  // Build member lookup map
+  const members: TrelloMember[] = membersRes.ok ? await membersRes.json() : [];
+  const memberMap: Record<string, string> = {};
+  members.forEach((m) => (memberMap[m.id] = m.fullName));
+
   const allCards: TrelloCard[] = await cardsRes.json();
 
   // Filter: cards with due date that are "done"
@@ -49,7 +62,7 @@ async function fetchBoardData(boardId: string) {
     (c) => c.due && (c.dueComplete || (listMap[c.idList] || '').toLowerCase().includes('done'))
   );
 
-  return { doneCards, listMap, boardName };
+  return { doneCards, listMap, boardName, memberMap };
 }
 
 /**
@@ -117,11 +130,11 @@ export async function GET(request: NextRequest) {
     // Fetch all boards in parallel
     const boardResults = await Promise.all(boardIds.map(fetchBoardData));
 
-    // Merge all done cards with their list maps and board names
-    const allDoneCards: { card: TrelloCard; listName: string; boardName: string }[] = [];
-    for (const { doneCards, listMap, boardName } of boardResults) {
+    // Merge all done cards with their list maps, board names, and member maps
+    const allDoneCards: { card: TrelloCard; listName: string; boardName: string; memberMap: Record<string, string> }[] = [];
+    for (const { doneCards, listMap, boardName, memberMap } of boardResults) {
       for (const card of doneCards) {
-        allDoneCards.push({ card, listName: listMap[card.idList] || 'Unknown', boardName });
+        allDoneCards.push({ card, listName: listMap[card.idList] || 'Unknown', boardName, memberMap });
       }
     }
 
@@ -143,7 +156,7 @@ export async function GET(request: NextRequest) {
     let onTime = 0;
     let late = 0;
 
-    const details = filtered.map(({ card, listName, boardName }, idx) => {
+    const details = filtered.map(({ card, listName, boardName, memberMap }, idx) => {
       const due = new Date(card.due!);
       const act = new Date(card.dateLastActivity);
       const buffer = new Date(due);
@@ -155,6 +168,9 @@ export async function GET(request: NextRequest) {
 
       const originalDue = originalDues[idx];
 
+      // Resolve member names from card's idMembers
+      const members = (card.idMembers || []).map((id) => memberMap[id] || id);
+
       return {
         name: card.name,
         list: listName,
@@ -164,6 +180,7 @@ export async function GET(request: NextRequest) {
         is_on_time: isOnTime,
         original_due: originalDue,
         due_changed: !!originalDue,
+        members,
       };
     });
 

@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Save, Loader2, Target, CheckCircle2, AlertCircle, Calendar, CalendarDays, Info, ArrowLeft, CalendarCheck, ExternalLink, RefreshCw, X, CheckCircle, XCircle } from 'lucide-react';
+import { Save, Loader2, Target, CheckCircle2, AlertCircle, Calendar, CalendarDays, Info, ArrowLeft, CalendarCheck, ExternalLink, RefreshCw, X, CheckCircle, XCircle, Calculator } from 'lucide-react';
 import PeriodSelector from '@/components/PeriodSelector';
 
 import { useToast } from '@/components/Toast';
+import VideoPointCalculator, { isVideoOutputTemplate } from '@/components/VideoPointCalculator';
 import { cn, calculateAchievement, calculateWeightedScore, getGrade, getGradeColor, getGradeBg, formatPercent, getMonthName, getCurrentPeriod, getWeeksInMonth, getEffectiveTarget } from '@/lib/utils';
 import { calculateAttendanceScore, calculateFinalScore, getAttendanceRates, type AttendanceEntry } from '@/lib/attendance';
 
@@ -74,8 +75,10 @@ export default function AdminKpiEditPage() {
   const [attendance, setAttendance] = useState<AttendanceEntry | null>(null);
   const [trelloOtd, setTrelloOtd] = useState<{ otdPercentage: number; onTime: number; late: number; total: number } | null>(null);
   const [trelloRefreshing, setTrelloRefreshing] = useState(false);
-  const [trelloDetails, setTrelloDetails] = useState<{ name: string; list: string; board: string; due: string; completed: string; is_on_time: boolean; original_due: string | null; due_changed: boolean }[]>([]);
+  const [trelloDetails, setTrelloDetails] = useState<{ name: string; list: string; board: string; due: string; completed: string; is_on_time: boolean; original_due: string | null; due_changed: boolean; members: string[] }[]>([]);
   const [showTrelloDetail, setShowTrelloDetail] = useState(false);
+  const [showVideoCalc, setShowVideoCalc] = useState(false);
+  const [videoCalcTemplateId, setVideoCalcTemplateId] = useState('');
 
   const isOtdTemplate = (t: { kpi_name: string }) => {
     const name = t.kpi_name.toLowerCase();
@@ -124,11 +127,34 @@ export default function AdminKpiEditPage() {
       // Auto-fill OTD from Trello
       const trelloData = json.trello_otd ?? null;
       setTrelloOtd(trelloData);
-      if (trelloData) {
-        const otdTpl = (json.templates || []).find((t: Template) => isOtdTemplate(t));
-        if (otdTpl) {
-          entryMap[otdTpl.id] = { actual_value: String(trelloData.otdPercentage), notes: entryMap[otdTpl.id]?.notes || '' };
-        }
+      const divId = json.user?.division_id || '';
+      const fullName = json.user?.full_name || '';
+      if (trelloData && divId) {
+        // Eagerly load card details for per-user filtering
+        try {
+          const detailParams = new URLSearchParams({ division_id: divId, year: year.toString(), month: month.toString() });
+          const detailRes = await fetch(`/api/trello/otd?${detailParams}`);
+          if (detailRes.ok) {
+            const detailData = await detailRes.json();
+            const details = detailData.details || [];
+            setTrelloDetails(details);
+            // Filter by user name and compute per-user OTD
+            const nameLower = fullName.toLowerCase();
+            const otdTpl = (json.templates || []).find((t: Template) => isOtdTemplate(t));
+            if (otdTpl && nameLower) {
+              const userCards = details.filter((card: { members: string[] }) =>
+                card.members.some((m: string) => {
+                  const ml = m.toLowerCase();
+                  return ml.includes(nameLower) || nameLower.includes(ml);
+                })
+              );
+              const onTime = userCards.filter((c: { is_on_time: boolean }) => c.is_on_time).length;
+              const total = userCards.length;
+              const pct = total > 0 ? Math.round((onTime / total) * 10000) / 100 : 0;
+              entryMap[otdTpl.id] = { actual_value: String(pct), notes: entryMap[otdTpl.id]?.notes || '' };
+            }
+          }
+        } catch { /* ignore */ }
       }
 
       setEntries(entryMap);
@@ -251,11 +277,24 @@ export default function AdminKpiEditPage() {
         const json = await res.json();
         const newOtd = { otdPercentage: json.otd_percentage, onTime: json.on_time, late: json.late, total: json.total };
         setTrelloOtd(newOtd);
+        const details = json.details || [];
+        setTrelloDetails(details);
+        // Compute per-user OTD
         const otdTpl = templates.find((t) => isOtdTemplate(t));
-        if (otdTpl) {
+        if (otdTpl && userName) {
+          const nameLower = userName.toLowerCase();
+          const userCards = details.filter((card: { members: string[] }) =>
+            card.members.some((m: string) => {
+              const ml = m.toLowerCase();
+              return ml.includes(nameLower) || nameLower.includes(ml);
+            })
+          );
+          const onTime = userCards.filter((c: { is_on_time: boolean }) => c.is_on_time).length;
+          const total = userCards.length;
+          const pct = total > 0 ? Math.round((onTime / total) * 10000) / 100 : 0;
           setEntries((prev) => ({
             ...prev,
-            [otdTpl.id]: { actual_value: String(newOtd.otdPercentage), notes: prev[otdTpl.id]?.notes || '' },
+            [otdTpl.id]: { actual_value: String(pct), notes: prev[otdTpl.id]?.notes || '' },
           }));
         }
         toast('Data Trello OTD berhasil diperbarui', 'success');
@@ -283,6 +322,30 @@ export default function AdminKpiEditPage() {
       } catch { /* ignore */ }
     }
   };
+
+  const userTrelloDetails = useMemo(() => {
+    if (!userName || trelloDetails.length === 0) return trelloDetails;
+    const nameLower = userName.toLowerCase();
+    return trelloDetails.filter(card =>
+      card.members.some(m => {
+        const ml = m.toLowerCase();
+        return ml.includes(nameLower) || nameLower.includes(ml);
+      })
+    );
+  }, [trelloDetails, userName]);
+
+  const userTrelloOtd = useMemo(() => {
+    if (!trelloOtd || !userName || trelloDetails.length === 0) return trelloOtd;
+    const onTime = userTrelloDetails.filter(c => c.is_on_time).length;
+    const total = userTrelloDetails.length;
+    return {
+      ...trelloOtd,
+      total,
+      onTime,
+      late: total - onTime,
+      otdPercentage: total > 0 ? Math.round((onTime / total) * 10000) / 100 : 0,
+    };
+  }, [trelloOtd, userTrelloDetails, userName, trelloDetails]);
 
   const periodLabel = viewMode === 'monthly'
     ? `${getMonthName(month)} ${year}`
@@ -577,12 +640,12 @@ export default function AdminKpiEditPage() {
                                 <span className="text-sm text-gray-500 ml-1">÷ {s.denominator.toFixed(0)}</span>
                                 <span className="text-sm text-brand-400 ml-1">= {s.actual.toFixed(2)}</span>
                               </div>
-                            ) : isOtdTemplate(s) && trelloOtd ? (
+                            ) : isOtdTemplate(s) && userTrelloOtd ? (
                               <div className="flex flex-col items-center gap-0.5">
                                 <span>{s.actual.toFixed(1)}%</span>
                                 <div className="flex items-center gap-1.5">
                                   <button type="button" onClick={openTrelloDetail} className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1">
-                                    Trello: {trelloOtd.onTime}/{trelloOtd.total} on-time <ExternalLink className="w-3 h-3" />
+                                    Trello: {userTrelloOtd.onTime}/{userTrelloOtd.total} on-time <ExternalLink className="w-3 h-3" />
                                   </button>
                                   <button type="button" onClick={refreshTrelloOtd} disabled={trelloRefreshing} className="text-blue-400 hover:text-blue-300 transition-colors">
                                     <RefreshCw className={cn('w-3 h-3', trelloRefreshing && 'animate-spin')} />
@@ -595,14 +658,14 @@ export default function AdminKpiEditPage() {
                           </div>
                         ) : (
                           <div className="flex flex-col items-center gap-0.5">
-                            {isOtdTemplate(s) && trelloOtd ? (
+                            {isOtdTemplate(s) && userTrelloOtd ? (
                               <>
                                 <div className="w-24 mx-auto px-3 py-1.5 bg-blue-500/[0.08] border border-blue-500/20 rounded-lg text-center text-sm text-white font-medium">
-                                  {trelloOtd.otdPercentage}
+                                  {userTrelloOtd.otdPercentage}
                                 </div>
                                 <div className="flex items-center gap-1.5 mt-0.5">
                                   <button type="button" onClick={openTrelloDetail} className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1">
-                                    Trello: {trelloOtd.onTime}/{trelloOtd.total} on-time <ExternalLink className="w-3 h-3" />
+                                    Trello: {userTrelloOtd.onTime}/{userTrelloOtd.total} on-time <ExternalLink className="w-3 h-3" />
                                   </button>
                                   <button type="button" onClick={refreshTrelloOtd} disabled={trelloRefreshing} className="text-blue-400 hover:text-blue-300 transition-colors">
                                     <RefreshCw className={cn('w-3 h-3', trelloRefreshing && 'animate-spin')} />
@@ -619,6 +682,15 @@ export default function AdminKpiEditPage() {
                                   className="w-24 mx-auto block px-3 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-center text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors"
                                   placeholder="0"
                                 />
+                                {isVideoOutputTemplate(s) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => { setVideoCalcTemplateId(s.id); setShowVideoCalc(true); }}
+                                    className="text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors"
+                                  >
+                                    <Calculator className="w-3 h-3" /> Kalkulator Poin
+                                  </button>
+                                )}
                                 {isRate(s) && s.rawInput > 0 && (
                                   <span className="text-sm text-brand-400">{s.rawInput.toFixed(0)} ÷ {s.denominator.toFixed(0)} = {s.actual.toFixed(2)}</span>
                                 )}
@@ -757,7 +829,7 @@ export default function AdminKpiEditPage() {
       )}
 
       {/* Trello OTD Detail Modal */}
-      {showTrelloDetail && trelloOtd && (
+      {showTrelloDetail && userTrelloOtd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowTrelloDetail(false)}>
           <div
             className="bg-[#16161e] border border-white/[0.08] rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl shadow-black/50 animate-in zoom-in-95 duration-150"
@@ -767,7 +839,7 @@ export default function AdminKpiEditPage() {
             <div className="p-5 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
               <div>
                 <h2 className="text-lg font-bold text-white">Trello OTD Detail</h2>
-                <p className="text-xs text-gray-500 mt-0.5">{divisionName} — {getMonthName(month)} {year}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{userName} — {divisionName} — {getMonthName(month)} {year}</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -787,30 +859,30 @@ export default function AdminKpiEditPage() {
             <div className="grid grid-cols-4 gap-3 p-5 border-b border-white/[0.06] flex-shrink-0">
               <div className="bg-blue-500/[0.08] border border-blue-500/20 rounded-xl p-3 text-center">
                 <p className="text-[10px] text-blue-400 font-semibold uppercase tracking-wider">Total Card</p>
-                <p className="text-2xl font-bold text-blue-400 mt-1">{trelloOtd.total}</p>
+                <p className="text-2xl font-bold text-blue-400 mt-1">{userTrelloOtd.total}</p>
               </div>
               <div className="bg-emerald-500/[0.08] border border-emerald-500/20 rounded-xl p-3 text-center">
                 <p className="text-[10px] text-emerald-400 font-semibold uppercase tracking-wider">On Time</p>
-                <p className="text-2xl font-bold text-emerald-400 mt-1">{trelloOtd.onTime}</p>
+                <p className="text-2xl font-bold text-emerald-400 mt-1">{userTrelloOtd.onTime}</p>
               </div>
               <div className="bg-red-500/[0.08] border border-red-500/20 rounded-xl p-3 text-center">
                 <p className="text-[10px] text-red-400 font-semibold uppercase tracking-wider">Terlambat</p>
-                <p className="text-2xl font-bold text-red-400 mt-1">{trelloOtd.late}</p>
+                <p className="text-2xl font-bold text-red-400 mt-1">{userTrelloOtd.late}</p>
               </div>
               <div className={cn(
                 "border rounded-xl p-3 text-center",
-                trelloOtd.otdPercentage >= 80 ? "bg-emerald-500/[0.08] border-emerald-500/20" :
-                trelloOtd.otdPercentage >= 60 ? "bg-amber-500/[0.08] border-amber-500/20" :
+                userTrelloOtd.otdPercentage >= 80 ? "bg-emerald-500/[0.08] border-emerald-500/20" :
+                userTrelloOtd.otdPercentage >= 60 ? "bg-amber-500/[0.08] border-amber-500/20" :
                 "bg-red-500/[0.08] border-red-500/20"
               )}>
                 <p className={cn(
                   "text-[10px] font-semibold uppercase tracking-wider",
-                  trelloOtd.otdPercentage >= 80 ? "text-emerald-400" : trelloOtd.otdPercentage >= 60 ? "text-amber-400" : "text-red-400"
+                  userTrelloOtd.otdPercentage >= 80 ? "text-emerald-400" : userTrelloOtd.otdPercentage >= 60 ? "text-amber-400" : "text-red-400"
                 )}>% OTD</p>
                 <p className={cn(
                   "text-2xl font-bold mt-1",
-                  trelloOtd.otdPercentage >= 80 ? "text-emerald-400" : trelloOtd.otdPercentage >= 60 ? "text-amber-400" : "text-red-400"
-                )}>{trelloOtd.otdPercentage}%</p>
+                  userTrelloOtd.otdPercentage >= 80 ? "text-emerald-400" : userTrelloOtd.otdPercentage >= 60 ? "text-amber-400" : "text-red-400"
+                )}>{userTrelloOtd.otdPercentage}%</p>
               </div>
             </div>
 
@@ -821,11 +893,14 @@ export default function AdminKpiEditPage() {
                   <Loader2 className="w-6 h-6 text-gray-500 animate-spin mx-auto mb-2" />
                   <p className="text-gray-500 text-sm">Memuat detail card...</p>
                 </div>
+              ) : userTrelloDetails.length === 0 ? (
+                <div className="p-12 text-center text-gray-500 text-sm">Tidak ada card untuk {userName}</div>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-white/[0.06]">
                       <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Card</th>
+                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Member</th>
                       <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Board</th>
                       <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">List</th>
                       <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Due Date</th>
@@ -835,7 +910,7 @@ export default function AdminKpiEditPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {trelloDetails
+                    {userTrelloDetails
                       .sort((a, b) => new Date(b.due).getTime() - new Date(a.due).getTime())
                       .map((card, i) => {
                         const due = new Date(card.due);
@@ -845,6 +920,9 @@ export default function AdminKpiEditPage() {
                         return (
                           <tr key={i} className={cn('border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors', card.due_changed && 'bg-amber-500/[0.03]')}>
                             <td className="px-4 py-3 text-white font-medium max-w-[200px] truncate">{card.name}</td>
+                            <td className="px-4 py-3 text-gray-400 text-xs max-w-[150px]">
+                              {card.members && card.members.length > 0 ? card.members.join(', ') : <span className="text-gray-600">-</span>}
+                            </td>
                             <td className="px-4 py-3 text-gray-500 text-xs max-w-[120px] truncate">{card.board}</td>
                             <td className="px-4 py-3 text-gray-500">{card.list}</td>
                             <td className="px-4 py-3 text-center">
@@ -881,6 +959,20 @@ export default function AdminKpiEditPage() {
           </div>
         </div>
       )}
+
+      <VideoPointCalculator
+        open={showVideoCalc}
+        onClose={() => setShowVideoCalc(false)}
+        initialBreakdown={entries[videoCalcTemplateId]?.notes || ''}
+        onApply={(total, breakdown) => {
+          if (videoCalcTemplateId) {
+            setEntries((prev) => ({
+              ...prev,
+              [videoCalcTemplateId]: { actual_value: String(total), notes: breakdown },
+            }));
+          }
+        }}
+      />
     </div>
   );
 }

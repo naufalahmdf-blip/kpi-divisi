@@ -10,14 +10,14 @@ export function calculateAchievement(
   target: number,
   formulaType: 'higher_better' | 'lower_better'
 ): number {
-  if (actual === 0) return 0;
-
   if (target === 0) {
     if (formulaType === 'lower_better') {
       return actual === 0 ? 1 : 0;
     }
     return 0;
   }
+
+  if (actual === 0) return 0;
 
   if (formulaType === 'higher_better') {
     return actual / target; // no cap — exceeding target gives > 100%
