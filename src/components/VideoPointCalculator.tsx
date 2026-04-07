@@ -14,14 +14,19 @@ const VIDEO_WORK_TYPES = [
   { name: 'LF Cut to Cut', points: 2 },
   { name: 'LF Heavy Edit Di Atas 10 Menit', points: 5 },
   { name: 'LF Heavy Edit Di Bawah 10 Menit', points: 3 },
-  { name: 'Modul Cut to Cut Di Atas 10 Menit', points: 2.5 },
-  { name: 'Modul Cut to Cut Di Bawah 10 Menit', points: 1.5 },
+  { name: 'Cut to Cut Di Atas 10 Menit', points: 2.5 },
+  { name: 'Cut to Cut Di Bawah 10 Menit', points: 1.5 },
   { name: 'Modul Heavy Edit', points: 3 },
-  { name: 'Motion Simple', points: 1 },
+  { name: 'Motion Simple Manual', points: 2 },
   { name: 'Motion Complex', points: 6 },
   { name: 'Colour Grading', points: 1 },
   { name: 'Shoot Event', points: 3 },
   { name: 'Shoot Rutin', points: 0.5 },
+  { name: 'Motion AI', points: 1 },
+  { name: 'Editing Under 5 Minutes', points: 1 },
+  { name: 'Editing Over 5 Minutes', points: 2 },
+  { name: 'Editing Over 10 Minutes', points: 3 },
+  { name: 'Editing Over 20 Minutes', points: 5 },
 ];
 
 interface VideoPointCalculatorProps {
