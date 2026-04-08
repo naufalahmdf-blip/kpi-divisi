@@ -76,7 +76,7 @@ export default function PeriodSelector({ periodType, year, month, week, onChange
             onChange={(e) => onChange({ week: parseInt(e.target.value) })}
             className={selectClass}
           >
-            {[1, 2, 3, 4, 5].map((w) => (
+            {[1, 2, 3, 4].map((w) => (
               <option key={w} value={w}>Minggu {w}</option>
             ))}
           </select>

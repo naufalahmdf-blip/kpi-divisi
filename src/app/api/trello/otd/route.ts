@@ -77,15 +77,14 @@ async function fetchOriginalDue(cardId: string): Promise<string | null> {
     if (!res.ok) return null;
     const actions: TrelloAction[] = await res.json();
 
-    // Need at least 2 actions to indicate a change:
-    // action[oldest] = first time due was set (old.due = null, card.due = first date)
-    // action[newer]  = due date changed (old.due = first date, card.due = new date)
-    if (actions.length < 2) return null;
+    // Need at least 1 action to indicate a due date change
+    if (actions.length === 0) return null;
 
-    // Actions are newest-first; the oldest action has the first due date set
+    // Actions are newest-first; the oldest action has the first due date change
     const oldest = actions[actions.length - 1];
-    // old.due could be null (first time setting), so use card.due as the original
-    const originalDue = oldest?.data?.old?.due ?? oldest?.data?.card?.due ?? null;
+    // old.due is the due date BEFORE the first change (the true original)
+    // If old.due is null, it means due was set for the first time (no prior due to track)
+    const originalDue = oldest?.data?.old?.due ?? null;
     return originalDue;
   } catch {
     return null;

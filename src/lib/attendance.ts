@@ -12,19 +12,25 @@ export interface AttendanceEntry {
 
 /**
  * Calculate attendance score contribution (0–20 pts).
- * Kehadiran:      target 90%, higher_better, weight 15
- * Keterlambatan:  target 5%,  lower_better,  weight 5
+ * Kehadiran:    target 95%, higher_better, weight 15
+ *   kehadiranRate = hadir / (hadir + tidak_hadir) × 100  (sakit & cuti excluded)
+ * Tepat Waktu:  target 90%, higher_better, weight 5
+ *   tepatWaktuRate = (hadir - terlambat) / hadir × 100  (0 if hadir = 0)
  */
 export function calculateAttendanceScore(entry: AttendanceEntry | null): number {
   if (!entry || entry.hari_kerja === 0) return 0;
 
-  const attendanceRate = (entry.hadir / entry.hari_kerja) * 100;
-  const lateRate = entry.hadir > 0 ? (entry.terlambat / entry.hadir) * 100 : 0;
+  const tidakHadir = Math.max(0, entry.hari_kerja - entry.hadir - entry.sakit - entry.cuti);
+  const kehadiranDenom = entry.hadir + tidakHadir; // exclude sakit & cuti
+  const kehadiranRate = kehadiranDenom > 0 ? (entry.hadir / kehadiranDenom) * 100 : 100;
+  const tepatWaktuRate = entry.hadir > 0
+    ? ((entry.hadir - entry.terlambat) / entry.hadir) * 100
+    : 0;
 
-  const kehadiranScore = Math.min(attendanceRate / 90, 1) * 15;
-  const keterlambatanScore = (lateRate <= 5 ? 1 : 5 / lateRate) * 5;
+  const kehadiranScore = Math.min(kehadiranRate / 95, 1) * 15;
+  const tepatWaktuScore = Math.min(tepatWaktuRate / 90, 1) * 5;
 
-  return kehadiranScore + keterlambatanScore; // 0–20
+  return kehadiranScore + tepatWaktuScore; // 0–20
 }
 
 /**
@@ -37,17 +43,22 @@ export function calculateFinalScore(kpiTotal: number, attendanceScore: number): 
 
 /**
  * Compute display rates from raw attendance data.
+ * attendanceRate  = hadir / (hadir + tidak_hadir) × 100  (sakit & cuti excluded)
+ * tepatWaktuRate  = (hadir - terlambat) / hadir × 100  (matches Excel "Persentase Tepat Waktu")
  */
 export function getAttendanceRates(entry: AttendanceEntry | null): {
   attendanceRate: number;
-  lateRate: number;
+  tepatWaktuRate: number;
   tidakHadir: number;
 } {
   if (!entry || entry.hari_kerja === 0) {
-    return { attendanceRate: 0, lateRate: 0, tidakHadir: 0 };
+    return { attendanceRate: 0, tepatWaktuRate: 0, tidakHadir: 0 };
   }
-  const attendanceRate = (entry.hadir / entry.hari_kerja) * 100;
-  const lateRate = entry.hadir > 0 ? (entry.terlambat / entry.hadir) * 100 : 0;
   const tidakHadir = Math.max(0, entry.hari_kerja - entry.hadir - entry.sakit - entry.cuti);
-  return { attendanceRate, lateRate, tidakHadir };
+  const kehadiranDenom = entry.hadir + tidakHadir;
+  const attendanceRate = kehadiranDenom > 0 ? (entry.hadir / kehadiranDenom) * 100 : 100;
+  const tepatWaktuRate = entry.hadir > 0
+    ? ((entry.hadir - entry.terlambat) / entry.hadir) * 100
+    : 0;
+  return { attendanceRate, tepatWaktuRate, tidakHadir };
 }

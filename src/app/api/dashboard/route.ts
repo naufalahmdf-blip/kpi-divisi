@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
-import { calculateAchievement, calculateWeightedScore, getGrade } from '@/lib/utils';
-import { aggregateAllUsers } from '@/lib/aggregation';
+import { calculateAchievement, calculateWeightedScore, getGrade, getWeeksInMonth, getEffectiveTarget } from '@/lib/utils';
+import { aggregateAllUsers, computeRateActual, isRateKpi, isOtdKpi } from '@/lib/aggregation';
 import { calculateAttendanceScore, calculateFinalScore } from '@/lib/attendance';
 
 export async function GET(request: NextRequest) {
@@ -14,16 +14,17 @@ export async function GET(request: NextRequest) {
   const year = parseInt(searchParams.get('year') || new Date().getFullYear().toString());
   const month = parseInt(searchParams.get('month') || (new Date().getMonth() + 1).toString());
   const week = searchParams.get('week') ? parseInt(searchParams.get('week')!) : null;
+  const weeksInMonth = getWeeksInMonth();
 
   // Get divisions
   const { data: divisions } = await supabaseAdmin.from('divisions').select('*').order('name');
 
-  // Get all users
+  // Get all active users with a division (admin included — they're also employees)
   const { data: allUsers } = await supabaseAdmin
     .from('users')
     .select('id, full_name, email, avatar_url, division_id, role, divisions(id, name)')
     .eq('is_active', true)
-    .eq('role', 'user');
+    .not('division_id', 'is', null);
 
   // Get templates
   const { data: templates } = await supabaseAdmin.from('kpi_templates').select('*').order('sort_order');
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
 
   // Pre-compute aggregated actuals for monthly mode
   const userIds = (allUsers || []).map((u) => u.id);
-  if (user.role === 'user' && !userIds.includes(user.id)) {
+  if (user.division_id && !userIds.includes(user.id)) {
     userIds.push(user.id);
   }
 
@@ -83,18 +84,32 @@ export async function GET(request: NextRequest) {
     };
   }
 
+  // Wrap getActual to auto-compute rate KPIs
+  const baseGetActual = getActual;
+  getActual = (userId: string, templateId: string) => {
+    const t = (templates || []).find((tpl) => tpl.id === templateId);
+    if (t && isRateKpi(t)) {
+      const rawValue = baseGetActual(userId, templateId);
+      return computeRateActual(
+        rawValue, t.denominator_template_id!,
+        (tid) => baseGetActual(userId, tid)
+      );
+    }
+    return baseGetActual(userId, templateId);
+  };
+
   // For regular user: compute their own score
   let myScore = null;
   let myGrade = null;
   let myScores: { kpi_name: string; category: string; weighted: number; achievement: number; weight: number }[] = [];
 
-  if (user.role === 'user' && user.division_id) {
+  if (user.division_id) {
     const myTemplates = (templates || []).filter((t) => t.division_id === user.division_id);
     let kpiTotal = 0;
 
     myScores = myTemplates.map((t) => {
       const actual = getActual(user.id, t.id);
-      const achievement = calculateAchievement(actual, Number(t.target), t.formula_type as 'higher_better' | 'lower_better');
+      const achievement = calculateAchievement(actual, getEffectiveTarget(Number(t.target), t.formula_type, periodType, weeksInMonth, isRateKpi(t), isOtdKpi(t)), t.formula_type as 'higher_better' | 'lower_better');
       const weighted = calculateWeightedScore(achievement, Number(t.weight));
       kpiTotal += weighted;
       return { kpi_name: t.kpi_name, category: t.category, weighted, achievement, weight: Number(t.weight) };
@@ -120,7 +135,7 @@ export async function GET(request: NextRequest) {
       let kpiTotal = 0;
       divTemplates.forEach((t) => {
         const actual = getActual(u.id, t.id);
-        const achievement = calculateAchievement(actual, Number(t.target), t.formula_type as 'higher_better' | 'lower_better');
+        const achievement = calculateAchievement(actual, getEffectiveTarget(Number(t.target), t.formula_type, periodType, weeksInMonth, isRateKpi(t), isOtdKpi(t)), t.formula_type as 'higher_better' | 'lower_better');
         kpiTotal += calculateWeightedScore(achievement, Number(t.weight));
       });
       const attendanceScore = calculateAttendanceScore(getAttendance(u.id));
@@ -138,7 +153,7 @@ export async function GET(request: NextRequest) {
 
     const scores = userTemplates.map((t) => {
       const actual = getActual(u.id, t.id);
-      const achievement = calculateAchievement(actual, Number(t.target), t.formula_type as 'higher_better' | 'lower_better');
+      const achievement = calculateAchievement(actual, getEffectiveTarget(Number(t.target), t.formula_type, periodType, weeksInMonth, isRateKpi(t), isOtdKpi(t)), t.formula_type as 'higher_better' | 'lower_better');
       const weighted = calculateWeightedScore(achievement, Number(t.weight));
       kpiTotal += weighted;
       return {

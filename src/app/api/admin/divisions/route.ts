@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { name } = await request.json();
+    const { name, trello_board_id } = await request.json();
 
     if (!name || !name.trim()) {
       return NextResponse.json({ error: 'Nama divisi harus diisi' }, { status: 400 });
@@ -32,7 +32,10 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await supabaseAdmin
       .from('divisions')
-      .insert({ name: name.trim(), slug })
+      .insert({
+        name: name.trim(), slug,
+        trello_board_id: trello_board_id?.trim() || null,
+      })
       .select()
       .single();
 
@@ -63,7 +66,7 @@ export async function PUT(request: NextRequest) {
   }
 
   try {
-    const { id, name } = await request.json();
+    const { id, name, trello_board_id } = await request.json();
 
     if (!id || !name || !name.trim()) {
       return NextResponse.json({ error: 'ID dan nama divisi harus diisi' }, { status: 400 });
@@ -75,7 +78,10 @@ export async function PUT(request: NextRequest) {
 
     const { error } = await supabaseAdmin
       .from('divisions')
-      .update({ name: name.trim(), slug })
+      .update({
+        name: name.trim(), slug,
+        trello_board_id: trello_board_id?.trim() || null,
+      })
       .eq('id', id);
 
     if (error) {

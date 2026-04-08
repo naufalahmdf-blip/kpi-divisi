@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { Save, Loader2, Target, CheckCircle2, AlertCircle, Calendar, CalendarDays, Info, CalendarCheck } from 'lucide-react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Save, Loader2, Target, CheckCircle2, AlertCircle, Calendar, CalendarDays, Info, CalendarCheck, ExternalLink, X, Clock, CheckCircle, XCircle, Calculator } from 'lucide-react';
 import PeriodSelector from '@/components/PeriodSelector';
 
 import { useToast } from '@/components/Toast';
-import { cn, calculateAchievement, calculateWeightedScore, getGrade, getGradeColor, getGradeBg, formatPercent, getMonthName, getCurrentPeriod } from '@/lib/utils';
+import VideoPointCalculator, { isVideoOutputTemplate } from '@/components/VideoPointCalculator';
+import { cn, calculateAchievement, calculateWeightedScore, getGrade, getGradeColor, getGradeBg, formatPercent, getMonthName, getCurrentPeriod, getWeeksInMonth, getEffectiveTarget } from '@/lib/utils';
 import { calculateAttendanceScore, calculateFinalScore, getAttendanceRates, type AttendanceEntry } from '@/lib/attendance';
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -37,6 +38,7 @@ interface Template {
   unit: string;
   formula_type: 'higher_better' | 'lower_better';
   sort_order: number;
+  denominator_template_id: string | null;
 }
 
 interface Entry {
@@ -65,6 +67,15 @@ export default function KpiPage() {
   const [divisionName, setDivisionName] = useState('');
   const [isAggregated, setIsAggregated] = useState(false);
   const [attendance, setAttendance] = useState<AttendanceEntry | null>(null);
+  const [divisionId, setDivisionId] = useState('');
+  const [trelloLoading, setTrelloLoading] = useState(false);
+  const [trelloInfo, setTrelloInfo] = useState<{
+    otd: number; onTime: number; late: number; total: number;
+    details: { name: string; list: string; board: string; due: string; completed: string; is_on_time: boolean; original_due: string | null; due_changed: boolean; members: string[] }[];
+  } | null>(null);
+  const [showTrelloDetail, setShowTrelloDetail] = useState(false);
+  const [showVideoCalc, setShowVideoCalc] = useState(false);
+  const [videoCalcTemplateId, setVideoCalcTemplateId] = useState('');
 
   const fetchKpi = useCallback(async () => {
     setLoading(true);
@@ -90,6 +101,7 @@ export default function KpiPage() {
       setTemplates(json.templates);
       setUserName(json.user?.full_name || '');
       setDivisionName((json.user?.divisions as { name: string } | null)?.name || '');
+      setDivisionId(json.user?.division_id || '');
       setIsAggregated(json.is_aggregated || false);
 
       const entryMap: Record<string, { actual_value: string; notes: string }> = {};
@@ -103,6 +115,55 @@ export default function KpiPage() {
       setEntries(entryMap);
       setWeeksFilled(weeksMap);
       setAttendance(json.attendance ?? null);
+
+      // Set Trello OTD info from server response
+      const divId = json.user?.division_id || '';
+      const fullName = json.user?.full_name || '';
+      if (json.trello_otd && divId) {
+        const t = json.trello_otd;
+        // Eagerly load card details for per-user filtering
+        let details: { name: string; list: string; board: string; due: string; completed: string; is_on_time: boolean; original_due: string | null; due_changed: boolean; members: string[] }[] = [];
+        try {
+          const detailParams = new URLSearchParams({ division_id: divId, year: year.toString(), month: month.toString() });
+          const detailRes = await fetch(`/api/trello/otd?${detailParams}`);
+          if (detailRes.ok) {
+            const detailData = await detailRes.json();
+            details = detailData.details || [];
+          }
+        } catch { /* ignore */ }
+        setTrelloInfo({ otd: t.otdPercentage, onTime: t.onTime, late: t.late, total: t.total, details });
+
+        // Compute per-user OTD
+        const otdTpl = (json.templates as Template[]).find((tpl) => {
+          const n = tpl.kpi_name.toLowerCase();
+          return n.includes('on-time delivery') || n.includes('on time delivery') || n.includes('otd');
+        });
+        if (otdTpl && fullName && details.length > 0) {
+          const nameLower = fullName.toLowerCase();
+          const userCards = details.filter((card) =>
+            card.members.some((m) => {
+              const ml = m.toLowerCase();
+              return ml.includes(nameLower) || nameLower.includes(ml);
+            })
+          );
+          const onTime = userCards.filter((c) => c.is_on_time).length;
+          const total = userCards.length;
+          const pct = total > 0 ? Math.round((onTime / total) * 10000) / 100 : 0;
+          entryMap[otdTpl.id] = {
+            actual_value: String(pct),
+            notes: entryMap[otdTpl.id]?.notes || `Trello: ${onTime}/${total} on-time`,
+          };
+          setEntries({ ...entryMap });
+        } else if (otdTpl && !entryMap[otdTpl.id]?.actual_value) {
+          entryMap[otdTpl.id] = {
+            actual_value: String(t.otdPercentage),
+            notes: entryMap[otdTpl.id]?.notes || `Trello: ${t.onTime}/${t.total} on-time`,
+          };
+          setEntries({ ...entryMap });
+        }
+      } else {
+        setTrelloInfo(null);
+      }
     } catch {
       setError('Gagal memuat data KPI');
     } finally {
@@ -113,6 +174,46 @@ export default function KpiPage() {
   useEffect(() => {
     fetchKpi();
   }, [fetchKpi]);
+
+  const openTrelloDetail = async () => {
+    if (!divisionId) return;
+    setShowTrelloDetail(true);
+    // Fetch full details if not loaded yet
+    if (trelloInfo && trelloInfo.details.length === 0) {
+      try {
+        const params = new URLSearchParams({ division_id: divisionId, year: year.toString(), month: month.toString() });
+        const res = await fetch(`/api/trello/otd?${params}`);
+        if (res.ok) {
+          const data = await res.json();
+          setTrelloInfo((prev) => prev ? { ...prev, details: data.details || [] } : prev);
+        }
+      } catch { /* ignore */ }
+    }
+  };
+
+  const userTrelloDetails = useMemo(() => {
+    if (!userName || !trelloInfo || trelloInfo.details.length === 0) return trelloInfo?.details || [];
+    const nameLower = userName.toLowerCase();
+    return trelloInfo.details.filter(card =>
+      card.members.some(m => {
+        const ml = m.toLowerCase();
+        return ml.includes(nameLower) || nameLower.includes(ml);
+      })
+    );
+  }, [trelloInfo, userName]);
+
+  const userTrelloInfo = useMemo(() => {
+    if (!trelloInfo || !userName || trelloInfo.details.length === 0) return trelloInfo;
+    const onTime = userTrelloDetails.filter(c => c.is_on_time).length;
+    const total = userTrelloDetails.length;
+    return {
+      ...trelloInfo,
+      total,
+      onTime,
+      late: total - onTime,
+      otd: total > 0 ? Math.round((onTime / total) * 10000) / 100 : 0,
+    };
+  }, [trelloInfo, userTrelloDetails, userName]);
 
   const handleSave = async () => {
     if (isAggregated) return;
@@ -168,11 +269,36 @@ export default function KpiPage() {
   };
 
   // Calculate scores
+  const weeksInMonth = getWeeksInMonth();
+  const isRate = (t: Template) => !!t.denominator_template_id;
+  const isOtdTemplate = (t: Template) =>
+    t.kpi_name.toLowerCase().includes('on-time delivery') ||
+    t.kpi_name.toLowerCase().includes('on time delivery') ||
+    t.kpi_name.toLowerCase().includes('otd');
+
+  // Compute raw actuals from entries
+  const rawActuals: Record<string, number> = {};
+  for (const t of templates) {
+    rawActuals[t.id] = parseFloat(entries[t.id]?.actual_value) || 0;
+  }
+  // Compute rate display values (raw / denominator as plain ratio)
+  const rateDisplayValues: Record<string, number> = {};
+  for (const t of templates) {
+    if (isRate(t)) {
+      const num = rawActuals[t.id];
+      const den = rawActuals[t.denominator_template_id!] ?? 0;
+      rateDisplayValues[t.id] = den === 0 ? 0 : Math.round((num / den) * 100) / 100;
+    }
+  }
+
   const scores = templates.map((t) => {
-    const actual = parseFloat(entries[t.id]?.actual_value) || 0;
-    const achievement = calculateAchievement(actual, t.target, t.formula_type);
+    const actual = isRate(t) ? rateDisplayValues[t.id] : rawActuals[t.id];
+    const rawInput = rawActuals[t.id];
+    const effectiveTarget = getEffectiveTarget(t.target, t.formula_type, viewMode, weeksInMonth, isRate(t), isOtdTemplate(t));
+    const achievement = calculateAchievement(actual, effectiveTarget, t.formula_type);
     const weighted = calculateWeightedScore(achievement, t.weight);
-    return { ...t, actual, achievement, weighted };
+    const denominator = isRate(t) ? (rawActuals[t.denominator_template_id!] ?? 0) : 0;
+    return { ...t, actual, rawInput, denominator, achievement, weighted, effectiveTarget };
   });
 
   const kpiTotal = scores.reduce((sum, s) => sum + s.weighted, 0);
@@ -180,9 +306,9 @@ export default function KpiPage() {
   const finalTotal = viewMode === 'monthly' ? calculateFinalScore(kpiTotal, attendanceScore) : kpiTotal;
   const grade = getGrade(finalTotal, viewMode === 'monthly' ? 120 : 100);
   const roundedTotal = Math.round(finalTotal * 100) / 100;
-  const { attendanceRate, lateRate } = getAttendanceRates(viewMode === 'monthly' ? attendance : null);
-  const kehadiranScore = Math.min(attendanceRate / 90, 1) * 15;
-  const keterlambatanScore = (lateRate <= 5 ? 1 : 5 / lateRate) * 5;
+  const { attendanceRate, tepatWaktuRate } = getAttendanceRates(viewMode === 'monthly' ? attendance : null);
+  const kehadiranScore = Math.min(attendanceRate / 95, 1) * 15;
+  const tepatWaktuScore = Math.min(tepatWaktuRate / 90, 1) * 5;
 
   const handlePeriodChange = (values: { periodType?: string; year?: number; month?: number; week?: number }) => {
     if (values.year) setYear(values.year);
@@ -334,19 +460,19 @@ export default function KpiPage() {
                       {[
                         {
                           label: 'Kehadiran',
-                          target: '≥ 90%',
+                          target: '≥ 95%',
                           displayValue: `${attendanceRate.toFixed(1)}%`,
-                          perf: Math.min(attendanceRate / 90, 1) * 100,
-                          color: attendanceRate >= 90 ? '#22c55e' : attendanceRate >= 70 ? '#f59e0b' : '#ef4444',
+                          perf: Math.min(attendanceRate / 95, 1) * 100,
+                          color: attendanceRate >= 95 ? '#22c55e' : attendanceRate >= 80 ? '#f59e0b' : '#ef4444',
                           pts: `${kehadiranScore.toFixed(1)}/15`,
                         },
                         {
-                          label: 'Keterlambatan',
-                          target: '≤ 5%',
-                          displayValue: `${lateRate.toFixed(1)}%`,
-                          perf: (lateRate <= 5 ? 1 : 5 / lateRate) * 100,
-                          color: lateRate <= 5 ? '#22c55e' : lateRate <= 15 ? '#f59e0b' : '#ef4444',
-                          pts: `${keterlambatanScore.toFixed(1)}/5`,
+                          label: 'Tepat Waktu',
+                          target: '≥ 90%',
+                          displayValue: `${tepatWaktuRate.toFixed(1)}%`,
+                          perf: Math.min(tepatWaktuRate / 90, 1) * 100,
+                          color: tepatWaktuRate >= 90 ? '#22c55e' : tepatWaktuRate >= 75 ? '#f59e0b' : '#ef4444',
+                          pts: `${tepatWaktuScore.toFixed(1)}/5`,
                         },
                       ].map((item) => (
                         <div key={item.label} className="flex flex-col items-center gap-2">
@@ -466,22 +592,64 @@ export default function KpiPage() {
                       </td>
                       <td className="px-6 py-3 text-sm text-white font-medium">{s.kpi_name}</td>
                       <td className="px-4 py-3 text-center text-sm text-gray-400">{s.weight}%</td>
-                      <td className="px-4 py-3 text-center text-sm text-gray-400">{s.target}</td>
+                      <td className="px-4 py-3 text-center text-sm text-gray-400">{s.effectiveTarget}</td>
                       <td className="px-4 py-3 text-center text-xs text-gray-500">{s.unit}</td>
                       <td className="px-4 py-3">
                         {isAggregated ? (
                           <div className="text-center text-sm font-medium text-white">
-                            {s.actual.toFixed(s.formula_type === 'lower_better' ? 2 : 0)}
+                            {isRate(s) ? (
+                              <div>
+                                <span>{s.rawInput.toFixed(0)}</span>
+                                <span className="text-sm text-gray-500 ml-1">÷ {s.denominator.toFixed(0)}</span>
+                                <span className="text-sm text-brand-400 ml-1">= {s.actual.toFixed(2)}</span>
+                              </div>
+                            ) : isOtdTemplate(s) && userTrelloInfo ? (
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span>{s.actual.toFixed(1)}%</span>
+                                <button type="button" onClick={openTrelloDetail} className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors">
+                                  Trello: {userTrelloInfo.onTime}/{userTrelloInfo.total} on-time <ExternalLink className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ) : (
+                              s.actual.toFixed(s.formula_type === 'lower_better' ? 2 : 0)
+                            )}
                           </div>
                         ) : (
-                          <input
-                            type="number"
-                            step="any"
-                            value={entries[s.id]?.actual_value ?? ''}
-                            onChange={(e) => updateEntry(s.id, 'actual_value', e.target.value)}
-                            className="w-24 mx-auto block px-3 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-center text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors"
-                            placeholder="0"
-                          />
+                          <div className="flex flex-col items-center gap-0.5">
+                            <input
+                              type="number"
+                              step="any"
+                              value={entries[s.id]?.actual_value ?? ''}
+                              onChange={(e) => updateEntry(s.id, 'actual_value', e.target.value)}
+                              className={cn(
+                                "w-24 mx-auto block px-3 py-1.5 border rounded-lg text-center text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors",
+                                isOtdTemplate(s) && userTrelloInfo ? "bg-blue-500/[0.08] border-blue-500/30" : "bg-white/[0.04] border-white/[0.08]"
+                              )}
+                              placeholder="0"
+                            />
+                            {isOtdTemplate(s) && userTrelloInfo && (
+                              <button
+                                type="button"
+                                onClick={openTrelloDetail}
+                                className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors"
+                              >
+                                Trello: {userTrelloInfo.onTime}/{userTrelloInfo.total} on-time
+                                <ExternalLink className="w-3 h-3" />
+                              </button>
+                            )}
+                            {isVideoOutputTemplate(s) && (
+                              <button
+                                type="button"
+                                onClick={() => { setVideoCalcTemplateId(s.id); setShowVideoCalc(true); }}
+                                className="text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors"
+                              >
+                                <Calculator className="w-3 h-3" /> Kalkulator Poin
+                              </button>
+                            )}
+                            {isRate(s) && s.rawInput > 0 && (
+                              <span className="text-sm text-brand-400">{s.rawInput.toFixed(0)} ÷ {s.denominator.toFixed(0)} = {s.actual.toFixed(2)}</span>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-center">
@@ -553,7 +721,7 @@ export default function KpiPage() {
                   </div>
                   <p className="text-sm font-medium text-white">{s.kpi_name}</p>
                   <div className="flex items-center gap-3 text-xs text-gray-400">
-                    <span>Target: {s.target} {s.unit}</span>
+                    <span>Target: {s.effectiveTarget} {s.unit}</span>
                     <span className={cn('font-medium', s.achievement >= 1 ? 'text-emerald-400' : s.achievement >= 0.7 ? 'text-amber-400' : 'text-red-400')}>
                       Capaian: {formatPercent(s.achievement)}
                     </span>
@@ -561,7 +729,9 @@ export default function KpiPage() {
                   </div>
                   {isAggregated ? (
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-400">Aktual: <span className="text-white font-medium">{s.actual.toFixed(s.formula_type === 'lower_better' ? 2 : 0)}</span></span>
+                      <span className="text-gray-400">Aktual: <span className="text-white font-medium">
+                        {isRate(s) ? `${s.rawInput.toFixed(0)} ÷ ${s.denominator.toFixed(0)} = ${s.actual.toFixed(2)}` : s.actual.toFixed(s.formula_type === 'lower_better' ? 2 : 0)}
+                      </span></span>
                       <span className={cn(
                         'text-xs font-medium px-2 py-1 rounded-lg',
                         (weeksFilled[s.id] || 0) >= 4 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
@@ -571,14 +741,19 @@ export default function KpiPage() {
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      <input
-                        type="number"
-                        step="any"
-                        value={entries[s.id]?.actual_value ?? ''}
-                        onChange={(e) => updateEntry(s.id, 'actual_value', e.target.value)}
-                        className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors"
-                        placeholder="Aktual"
-                      />
+                      <div>
+                        <input
+                          type="number"
+                          step="any"
+                          value={entries[s.id]?.actual_value ?? ''}
+                          onChange={(e) => updateEntry(s.id, 'actual_value', e.target.value)}
+                          className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors"
+                          placeholder="Aktual"
+                        />
+                        {isRate(s) && s.rawInput > 0 && (
+                          <span className="text-sm text-brand-400 ml-1">{s.rawInput.toFixed(0)} ÷ {s.denominator.toFixed(0)} = {s.actual.toFixed(2)}</span>
+                        )}
+                      </div>
                       <input
                         type="text"
                         value={entries[s.id]?.notes ?? ''}
@@ -667,6 +842,140 @@ export default function KpiPage() {
           )}
         </>
       )}
+
+      {/* Trello OTD Detail Modal */}
+      {showTrelloDetail && userTrelloInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowTrelloDetail(false)}>
+          <div
+            className="bg-[#16161e] border border-white/[0.08] rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl shadow-black/50 animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-5 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
+              <div>
+                <h2 className="text-lg font-bold text-white">Trello OTD Detail</h2>
+                <p className="text-xs text-gray-500 mt-0.5">{userName} — {divisionName} — {getMonthName(month)} {year}</p>
+              </div>
+              <button onClick={() => setShowTrelloDetail(false)} className="text-gray-500 hover:text-white transition-colors p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* KPI Summary */}
+            <div className="grid grid-cols-4 gap-3 p-5 border-b border-white/[0.06] flex-shrink-0">
+              <div className="bg-blue-500/[0.08] border border-blue-500/20 rounded-xl p-3 text-center">
+                <p className="text-[10px] text-blue-400 font-semibold uppercase tracking-wider">Total Card</p>
+                <p className="text-2xl font-bold text-blue-400 mt-1">{userTrelloInfo.total}</p>
+              </div>
+              <div className="bg-emerald-500/[0.08] border border-emerald-500/20 rounded-xl p-3 text-center">
+                <p className="text-[10px] text-emerald-400 font-semibold uppercase tracking-wider">On Time</p>
+                <p className="text-2xl font-bold text-emerald-400 mt-1">{userTrelloInfo.onTime}</p>
+              </div>
+              <div className="bg-red-500/[0.08] border border-red-500/20 rounded-xl p-3 text-center">
+                <p className="text-[10px] text-red-400 font-semibold uppercase tracking-wider">Terlambat</p>
+                <p className="text-2xl font-bold text-red-400 mt-1">{userTrelloInfo.late}</p>
+              </div>
+              <div className={cn(
+                "border rounded-xl p-3 text-center",
+                userTrelloInfo.otd >= 80 ? "bg-emerald-500/[0.08] border-emerald-500/20" :
+                userTrelloInfo.otd >= 60 ? "bg-amber-500/[0.08] border-amber-500/20" :
+                "bg-red-500/[0.08] border-red-500/20"
+              )}>
+                <p className={cn(
+                  "text-[10px] font-semibold uppercase tracking-wider",
+                  userTrelloInfo.otd >= 80 ? "text-emerald-400" : userTrelloInfo.otd >= 60 ? "text-amber-400" : "text-red-400"
+                )}>% OTD</p>
+                <p className={cn(
+                  "text-2xl font-bold mt-1",
+                  userTrelloInfo.otd >= 80 ? "text-emerald-400" : userTrelloInfo.otd >= 60 ? "text-amber-400" : "text-red-400"
+                )}>{userTrelloInfo.otd}%</p>
+              </div>
+            </div>
+
+            {/* Card Table */}
+            <div className="overflow-auto flex-1">
+              {trelloInfo && trelloInfo.details.length === 0 ? (
+                <div className="p-12 text-center text-gray-500 text-sm">Tidak ada card dengan due date yang sudah selesai</div>
+              ) : userTrelloDetails.length === 0 ? (
+                <div className="p-12 text-center text-gray-500 text-sm">Tidak ada card untuk {userName}</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-white/[0.06]">
+                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Card</th>
+                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Member</th>
+                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Board</th>
+                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">List</th>
+                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Due Date</th>
+                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Tgl Aktivitas</th>
+                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Selisih</th>
+                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {userTrelloDetails
+                      .sort((a, b) => new Date(b.due).getTime() - new Date(a.due).getTime())
+                      .map((card, i) => {
+                        const due = new Date(card.due);
+                        const act = new Date(card.completed);
+                        const diffDays = Math.ceil((act.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+                        const origDue = card.original_due ? new Date(card.original_due) : null;
+                        return (
+                          <tr key={i} className={cn('border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors', card.due_changed && 'bg-amber-500/[0.03]')}>
+                            <td className="px-4 py-3 text-white font-medium max-w-[200px] truncate">{card.name}</td>
+                            <td className="px-4 py-3 text-gray-400 text-xs max-w-[150px]">
+                              {card.members && card.members.length > 0 ? card.members.join(', ') : <span className="text-gray-600">-</span>}
+                            </td>
+                            <td className="px-4 py-3 text-gray-500 text-xs max-w-[120px] truncate">{card.board}</td>
+                            <td className="px-4 py-3 text-gray-500">{card.list}</td>
+                            <td className="px-4 py-3 text-center">
+                              <div className="text-gray-400">{due.toLocaleDateString('id-ID')}</div>
+                              {card.due_changed && origDue && (
+                                <div className="text-[10px] text-amber-400 flex items-center justify-center gap-0.5 mt-0.5" title={`Due date awal: ${origDue.toLocaleDateString('id-ID')}`}>
+                                  <AlertCircle className="w-2.5 h-2.5" />
+                                  <span>awal: {origDue.toLocaleDateString('id-ID')}</span>
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-center text-gray-400">{act.toLocaleDateString('id-ID')}</td>
+                            <td className="px-4 py-3 text-center">
+                              <span className={cn('font-semibold', card.is_on_time ? 'text-emerald-400' : 'text-red-400')}>
+                                {diffDays <= 1 ? `${diffDays}d` : `+${diffDays}d`}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span className={cn(
+                                'inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg',
+                                card.is_on_time ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                              )}>
+                                {card.is_on_time ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                                {card.is_on_time ? 'ON TIME' : 'TERLAMBAT'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <VideoPointCalculator
+        open={showVideoCalc}
+        onClose={() => setShowVideoCalc(false)}
+        initialBreakdown={entries[videoCalcTemplateId]?.notes || ''}
+        onApply={(total, breakdown) => {
+          if (videoCalcTemplateId) {
+            setEntries((prev) => ({
+              ...prev,
+              [videoCalcTemplateId]: { actual_value: String(total), notes: breakdown },
+            }));
+          }
+        }}
+      />
     </div>
   );
 }
