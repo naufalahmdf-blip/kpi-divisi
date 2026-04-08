@@ -57,10 +57,12 @@ async function fetchBoardData(boardId: string) {
 
   const allCards: TrelloCard[] = await cardsRes.json();
 
-  // Filter: cards with due date that are "done"
-  const doneCards = allCards.filter(
-    (c) => c.due && (c.dueComplete || (listMap[c.idList] || '').toLowerCase().includes('done'))
-  );
+  // Filter: cards with due date that are "done", exclude archived lists
+  const doneCards = allCards.filter((c) => {
+    const listName = (listMap[c.idList] || '').toLowerCase();
+    if (listName.includes('archive')) return false;
+    return c.due && (c.dueComplete || listName.includes('done'));
+  });
 
   return { doneCards, listMap, boardName, memberMap };
 }

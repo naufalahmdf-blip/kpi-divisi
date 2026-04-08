@@ -28,9 +28,11 @@ async function fetchBoardData(boardId: string) {
   if (!cardsRes.ok) return { doneCards: [] as TrelloCard[], listMap };
   const allCards: TrelloCard[] = await cardsRes.json();
 
-  const doneCards = allCards.filter(
-    (c) => c.due && (c.dueComplete || (listMap[c.idList] || '').toLowerCase().includes('done'))
-  );
+  const doneCards = allCards.filter((c) => {
+    const listName = (listMap[c.idList] || '').toLowerCase();
+    if (listName.includes('archive')) return false;
+    return c.due && (c.dueComplete || listName.includes('done'));
+  });
 
   return { doneCards, listMap };
 }
