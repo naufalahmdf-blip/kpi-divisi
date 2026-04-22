@@ -26,8 +26,8 @@ interface TrelloMember {
 interface TrelloAction {
   date: string;
   data: {
-    old?: { dueComplete?: boolean };
-    card?: { dueComplete?: boolean };
+    old?: { dueComplete?: boolean; due?: string | null };
+    card?: { dueComplete?: boolean; due?: string };
     listBefore?: { id: string; name: string };
     listAfter?: { id: string; name: string };
   };
@@ -59,6 +59,36 @@ async function fetchBoardData(boardId: string) {
   });
 
   return { doneCards, listMap, boardName: boardInfo.name as string, memberMap, boardId };
+}
+
+/**
+ * Due date PERTAMA dari Trello action history (sebelum admin Trello sempat
+ * mengubahnya). Kalau due tidak pernah diubah, return null. Tujuan: audit
+ * "deadline dipindah" — TIDAK dipakai untuk scoring.
+ */
+async function fetchOriginalDue(cardId: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://api.trello.com/1/cards/${cardId}/actions?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}&filter=updateCard:due&limit=50`
+    );
+    if (!res.ok) return null;
+    const actions: TrelloAction[] = await res.json();
+    if (actions.length === 0) return null;
+    // Actions newest-first; oldest action punya due event pertama
+    const oldest = actions[actions.length - 1];
+    if (oldest?.data?.old?.due) {
+      // Card dibuat dengan due date, lalu diubah → old.due adalah due original
+      return oldest.data.old.due;
+    }
+    // oldest old.due null → due di-set pertama kali. Kalau ada minimal 2 actions,
+    // oldest card.due adalah due set pertama (artinya memang pernah diubah setelah itu)
+    if (actions.length >= 2) {
+      return oldest?.data?.card?.due ?? null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 async function fetchFirstDoneAt(cardId: string): Promise<string | null> {
@@ -148,10 +178,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Fetch first-done-at untuk semua card secara paralel
-    const firstDoneDates = await Promise.all(
-      allDoneCards.map(({ card }) => fetchFirstDoneAt(card.id))
-    );
+    // Fetch first-done-at + original-due untuk semua card secara paralel
+    const [firstDoneDates, originalDues] = await Promise.all([
+      Promise.all(allDoneCards.map(({ card }) => fetchFirstDoneAt(card.id))),
+      Promise.all(allDoneCards.map(({ card }) => fetchOriginalDue(card.id))),
+    ]);
 
     // Ambil snapshot existing untuk cek override flags
     const currentCardIds = allDoneCards.map(({ card }) => card.id);
@@ -177,6 +208,7 @@ export async function POST(request: NextRequest) {
         name: card.name,
         member_ids: card.idMembers || [],
         member_names: (card.idMembers || []).map((id) => memberMap[id] || id),
+        original_due: originalDues[idx],  // audit only, tidak dipakai scoring
         deleted_on_trello: false,
         synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),

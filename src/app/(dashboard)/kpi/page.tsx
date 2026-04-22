@@ -660,12 +660,14 @@ export default function KpiPage() {
                           </span>
                         </td>
                       ) : (
-                        <td className="px-4 py-3">
-                          <input
-                            type="text"
+                        <td className="px-4 py-3 min-w-[160px]">
+                          <textarea
                             value={entries[s.id]?.notes ?? ''}
                             onChange={(e) => updateEntry(s.id, 'notes', e.target.value)}
-                            className="w-full px-3 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors"
+                            rows={1}
+                            ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                            onInput={(e) => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }}
+                            className="w-full px-3 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors resize-none overflow-hidden whitespace-pre-wrap break-words leading-snug"
                             placeholder="..."
                           />
                         </td>
@@ -746,11 +748,13 @@ export default function KpiPage() {
                           <span className="text-sm text-brand-400 ml-1">{s.rawInput.toFixed(0)} ÷ {s.denominator.toFixed(0)} = {s.actual.toFixed(2)}</span>
                         )}
                       </div>
-                      <input
-                        type="text"
+                      <textarea
                         value={entries[s.id]?.notes ?? ''}
                         onChange={(e) => updateEntry(s.id, 'notes', e.target.value)}
-                        className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors"
+                        rows={1}
+                        ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                        onInput={(e) => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }}
+                        className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-sm text-white focus:outline-none focus:border-brand-400/50 transition-colors resize-none overflow-hidden whitespace-pre-wrap break-words leading-snug"
                         placeholder="Catatan..."
                       />
                     </div>
