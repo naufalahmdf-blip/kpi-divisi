@@ -133,6 +133,7 @@ export default function AdminKpiEditPage() {
         // Eagerly load card details for per-user filtering
         try {
           const detailParams = new URLSearchParams({ division_id: divId, year: year.toString(), month: month.toString() });
+          if (viewMode === 'weekly') detailParams.append('week', week.toString());
           const detailRes = await fetch(`/api/trello/otd?${detailParams}`);
           if (detailRes.ok) {
             const detailData = await detailRes.json();
@@ -256,11 +257,9 @@ export default function AdminKpiEditPage() {
   const kpiTotal = scores.reduce((sum, s) => sum + s.weighted, 0);
   const attendanceScore = viewMode === 'monthly' ? calculateAttendanceScore(attendance) : 0;
   const finalTotal = viewMode === 'monthly' ? calculateFinalScore(kpiTotal, attendanceScore) : kpiTotal;
-  const grade = getGrade(finalTotal, viewMode === 'monthly' ? 120 : 100);
+  const grade = getGrade(finalTotal, 100);
   const roundedTotal = Math.round(finalTotal * 100) / 100;
-  const { attendanceRate, tepatWaktuRate } = getAttendanceRates(viewMode === 'monthly' ? attendance : null);
-  const kehadiranScore = Math.min(attendanceRate / 90, 1) * 15;
-  const tepatWaktuScore = Math.min(tepatWaktuRate / 95, 1) * 5;
+  const { lateMinutes, tidakHadir, withinBuffer } = getAttendanceRates(viewMode === 'monthly' ? attendance : null);
 
   const handlePeriodChange = (values: { periodType?: string; year?: number; month?: number; week?: number }) => {
     if (values.year) setYear(values.year);
@@ -272,7 +271,9 @@ export default function AdminKpiEditPage() {
     if (!divisionId) return;
     setTrelloRefreshing(true);
     try {
-      const res = await fetch(`/api/trello/otd?division_id=${divisionId}&year=${year}&month=${month}`);
+      const otdQuery = new URLSearchParams({ division_id: divisionId, year: year.toString(), month: month.toString() });
+      if (viewMode === 'weekly') otdQuery.append('week', week.toString());
+      const res = await fetch(`/api/trello/otd?${otdQuery}`);
       if (res.ok) {
         const json = await res.json();
         const newOtd = { otdPercentage: json.otd_percentage, onTime: json.on_time, late: json.late, total: json.total };
@@ -314,6 +315,7 @@ export default function AdminKpiEditPage() {
     if (trelloDetails.length === 0) {
       try {
         const params = new URLSearchParams({ division_id: divisionId, year: year.toString(), month: month.toString() });
+        if (viewMode === 'weekly') params.append('week', week.toString());
         const res = await fetch(`/api/trello/otd?${params}`);
         if (res.ok) {
           const data = await res.json();
@@ -494,55 +496,45 @@ export default function AdminKpiEditPage() {
                 </div>
                 {attendance ? (
                   <>
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        {
-                          label: 'Kehadiran',
-                          target: '≥ 90%',
-                          displayValue: `${attendanceRate.toFixed(1)}%`,
-                          perf: Math.min(attendanceRate / 90, 1) * 100,
-                          color: attendanceRate >= 90 ? '#22c55e' : attendanceRate >= 70 ? '#f59e0b' : '#ef4444',
-                          pts: `${kehadiranScore.toFixed(1)}/15`,
-                        },
-                        {
-                          label: 'Tepat Waktu',
-                          target: '≥ 95%',
-                          displayValue: `${tepatWaktuRate.toFixed(1)}%`,
-                          perf: Math.min(tepatWaktuRate / 95, 1) * 100,
-                          color: tepatWaktuRate >= 95 ? '#22c55e' : tepatWaktuRate >= 80 ? '#f59e0b' : '#ef4444',
-                          pts: `${tepatWaktuScore.toFixed(1)}/5`,
-                        },
-                      ].map((item) => (
-                        <div key={item.label} className="flex flex-col items-center gap-2">
-                          <div className="relative" style={{ width: 90, height: 90 }}>
-                            <svg viewBox="0 0 36 36" style={{ width: 90, height: 90, transform: 'rotate(-90deg)' }}>
+                    {(() => {
+                      const perf = lateMinutes === 0 ? 100 : withinBuffer ? 100 : Math.min((60 / lateMinutes) * 100, 100);
+                      const color = withinBuffer ? '#22c55e' : lateMinutes <= 120 ? '#f59e0b' : '#ef4444';
+                      return (
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="relative" style={{ width: 110, height: 110 }}>
+                            <svg viewBox="0 0 36 36" style={{ width: 110, height: 110, transform: 'rotate(-90deg)' }}>
                               <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
                               <circle
                                 cx="18" cy="18" r="15.9"
                                 fill="none"
-                                stroke={item.color}
+                                stroke={color}
                                 strokeWidth="3"
-                                strokeDasharray={`${item.perf.toFixed(2)} ${(100 - item.perf).toFixed(2)}`}
+                                strokeDasharray={`${perf.toFixed(2)} ${(100 - perf).toFixed(2)}`}
                                 strokeLinecap="round"
                               />
                             </svg>
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <span className="text-sm font-bold text-white">{item.displayValue}</span>
+                            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                              <span className="text-lg font-bold text-white leading-none">{lateMinutes}</span>
+                              <span className="text-[10px] text-gray-400 mt-0.5">menit</span>
                             </div>
                           </div>
                           <div className="text-center">
-                            <p className="text-xs font-medium text-gray-300">{item.label}</p>
-                            <p className="text-[10px] text-gray-500">Target {item.target}</p>
-                            <p className="text-xs font-bold mt-0.5" style={{ color: item.color }}>{item.pts} pts</p>
+                            <p className="text-xs font-medium text-gray-300">Keterlambatan</p>
+                            <p className="text-[10px] text-gray-500">Toleransi ≤ 60 menit/bln</p>
+                            <p className="text-xs font-bold mt-0.5" style={{ color }}>{attendanceScore.toFixed(1)}/5 pts</p>
                           </div>
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })()}
                     <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between">
+                      <span className="text-xs text-gray-500">Tidak Hadir</span>
+                      <span className="text-xs text-gray-300">{tidakHadir} hari</span>
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
                       <span className="text-xs text-gray-500">Total Absensi</span>
                       <div>
                         <span className="text-sm font-bold text-green-400">{attendanceScore.toFixed(1)}</span>
-                        <span className="text-xs text-gray-500">/20 pts</span>
+                        <span className="text-xs text-gray-500">/5 pts</span>
                       </div>
                     </div>
                   </>
@@ -735,7 +727,7 @@ export default function AdminKpiEditPage() {
                         <div>
                           <span className="text-sm font-semibold text-gray-400">Final Skor</span>
                           <span className="ml-2 text-xs text-gray-600">
-                            (KPI {kpiTotal.toFixed(1)} + Absensi {attendanceScore.toFixed(1)}) / 120
+                            (KPI {kpiTotal.toFixed(1)} × 0.95 + Absensi {attendanceScore.toFixed(1)}) / 100
                           </span>
                         </div>
                       ) : (
@@ -782,13 +774,12 @@ export default function AdminKpiEditPage() {
 
               {attendance ? (
                 <div className="p-5 space-y-4">
-                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[
-                      { label: 'Hari Kerja', value: attendance.hari_kerja },
-                      { label: 'Hadir', value: attendance.hadir },
-                      { label: 'Terlambat', value: attendance.terlambat },
-                      { label: 'Sakit', value: attendance.sakit },
-                      { label: 'Cuti', value: attendance.cuti },
+                      { label: 'Menit Terlambat', value: `${attendance.terlambat}` },
+                      { label: 'Tidak Hadir', value: `${tidakHadir}` },
+                      { label: 'Sakit', value: `${attendance.sakit}` },
+                      { label: 'Cuti', value: `${attendance.cuti}` },
                     ].map((item) => (
                       <div key={item.label} className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 text-center">
                         <div className="text-xl font-bold text-white">{item.value}</div>
@@ -801,12 +792,15 @@ export default function AdminKpiEditPage() {
                     <div>
                       <span className="text-sm font-semibold text-white">Total Absensi Score</span>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        KPI {kpiTotal.toFixed(1)} + Absensi {attendanceScore.toFixed(1)} = Final {roundedTotal} / 120
+                        KPI {kpiTotal.toFixed(1)} × 0.95 + Absensi {attendanceScore.toFixed(1)} = Final {roundedTotal} / 100
+                      </p>
+                      <p className="text-[10px] text-gray-600 mt-1">
+                        {withinBuffer ? '✓ Keterlambatan masih dalam toleransi 60 menit' : `Keterlambatan ${lateMinutes} menit melebihi toleransi 60 menit`}
                       </p>
                     </div>
                     <div className="text-right">
                       <span className="text-2xl font-bold text-green-400">{attendanceScore.toFixed(1)}</span>
-                      <span className="text-sm font-normal text-gray-500">/20 pts</span>
+                      <span className="text-sm font-normal text-gray-500">/5 pts</span>
                     </div>
                   </div>
                 </div>
@@ -843,7 +837,7 @@ export default function AdminKpiEditPage() {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={async () => { await refreshTrelloOtd(); setTrelloDetails([]); const params = new URLSearchParams({ division_id: divisionId, year: year.toString(), month: month.toString() }); try { const res = await fetch(`/api/trello/otd?${params}`); if (res.ok) { const data = await res.json(); setTrelloDetails(data.details || []); } } catch {} }}
+                  onClick={async () => { await refreshTrelloOtd(); setTrelloDetails([]); const params = new URLSearchParams({ division_id: divisionId, year: year.toString(), month: month.toString() }); if (viewMode === 'weekly') params.append('week', week.toString()); try { const res = await fetch(`/api/trello/otd?${params}`); if (res.ok) { const data = await res.json(); setTrelloDetails(data.details || []); } } catch {} }}
                   disabled={trelloRefreshing}
                   className="text-gray-400 hover:text-white transition-colors p-1"
                 >

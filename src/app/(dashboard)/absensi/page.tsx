@@ -200,32 +200,22 @@ export default function AbsensiPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((emp) => {
             const att = emp.attendance;
-            const hasData = att !== null && att.hari_kerja > 0;
+            const hasData = att !== null;
 
             const tidakHadir = hasData
-              ? Math.max(0, att!.hari_kerja - att!.hadir - att!.sakit - att!.cuti)
+              ? Math.max(0, (att!.hari_kerja || 0) - (att!.hadir || 0) - (att!.sakit || 0) - (att!.cuti || 0))
               : 0;
-            const kehadiranDenom = hasData ? att!.hadir + tidakHadir : 0;
-            const attendanceRate = hasData && kehadiranDenom > 0
-              ? (att!.hadir / kehadiranDenom) * 100
-              : 0;
-            const tepatWaktuRate = hasData && att!.hadir > 0
-              ? ((att!.hadir - att!.terlambat) / att!.hadir) * 100
-              : 0;
-
-            const attendanceColor =
-              attendanceRate >= 95 ? '#10b981' : attendanceRate >= 80 ? '#f59e0b' : '#ef4444';
-            const tepatWaktuColor =
-              tepatWaktuRate >= 90 ? '#10b981' : tepatWaktuRate >= 75 ? '#f59e0b' : '#ef4444';
+            const lateMinutes = hasData ? att!.terlambat : 0;
+            const lateFill = lateMinutes === 0 ? 1 : lateMinutes <= 60 ? 1 : Math.min(60 / lateMinutes, 1);
+            const lateColor =
+              lateMinutes <= 60 ? '#10b981' : lateMinutes <= 120 ? '#f59e0b' : '#ef4444';
 
             const stats = hasData
               ? [
-                  { label: 'Kerja', value: att!.hari_kerja, color: 'text-gray-300' },
-                  { label: 'Hadir', value: att!.hadir, color: 'text-emerald-400' },
-                  { label: 'Telat', value: att!.terlambat, color: att!.terlambat > 0 ? 'text-amber-400' : 'text-gray-400' },
-                  { label: 'Sakit', value: att!.sakit, color: att!.sakit > 0 ? 'text-blue-400' : 'text-gray-400' },
-                  { label: 'Cuti', value: att!.cuti, color: att!.cuti > 0 ? 'text-purple-400' : 'text-gray-400' },
-                  { label: 'Alpha', value: tidakHadir, color: tidakHadir > 0 ? 'text-red-400' : 'text-gray-400' },
+                  { label: 'Telat (mnt)', value: `${att!.terlambat}`, color: att!.terlambat > 60 ? 'text-red-400' : att!.terlambat > 0 ? 'text-amber-400' : 'text-gray-400' },
+                  { label: 'Tidak Hadir', value: `${tidakHadir}`, color: tidakHadir > 0 ? 'text-red-400' : 'text-gray-400' },
+                  { label: 'Sakit', value: `${att!.sakit}`, color: att!.sakit > 0 ? 'text-blue-400' : 'text-gray-400' },
+                  { label: 'Cuti', value: `${att!.cuti}`, color: att!.cuti > 0 ? 'text-purple-400' : 'text-gray-400' },
                 ]
               : [];
 
@@ -266,33 +256,19 @@ export default function AbsensiPage() {
                     {/* Divider */}
                     <div className="h-px bg-white/[0.04] mx-4" />
 
-                    {/* Donut Charts */}
-                    <div className="flex items-center justify-around px-4 py-4 gap-2">
+                    {/* Donut */}
+                    <div className="flex items-center justify-center px-4 py-5">
                       <DonutRing
-                        fillPct={attendanceRate / 100}
-                        color={attendanceColor}
-                        label="Kehadiran"
-                        valueText={`${attendanceRate.toFixed(0)}%`}
-                        target="≥95%"
-                      />
-                      <div className="flex flex-col items-center gap-1.5 text-center px-2">
-                        <p className="text-lg font-bold text-white">{att!.hadir}</p>
-                        <p className="text-[10px] text-gray-400">hadir</p>
-                        <div className="h-px w-8 bg-white/10 my-0.5" />
-                        <p className="text-lg font-bold text-white">{att!.hari_kerja}</p>
-                        <p className="text-[10px] text-gray-400">hari kerja</p>
-                      </div>
-                      <DonutRing
-                        fillPct={tepatWaktuRate / 100}
-                        color={tepatWaktuColor}
-                        label="Tepat Waktu"
-                        valueText={`${tepatWaktuRate.toFixed(0)}%`}
-                        target="≥90%"
+                        fillPct={lateFill}
+                        color={lateColor}
+                        label="Keterlambatan"
+                        valueText={`${lateMinutes}m`}
+                        target="≤60m"
                       />
                     </div>
 
                     {/* Stats row */}
-                    <div className="border-t border-white/[0.04] grid grid-cols-6 mt-auto">
+                    <div className="border-t border-white/[0.04] grid grid-cols-4 mt-auto">
                       {stats.map((s) => (
                         <div
                           key={s.label}

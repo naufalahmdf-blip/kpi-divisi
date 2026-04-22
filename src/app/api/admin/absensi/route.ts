@@ -61,11 +61,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'user_id, year, month wajib diisi' }, { status: 400 });
     }
 
-    if (hadir > hari_kerja) {
-      return NextResponse.json({ error: 'Hadir tidak boleh melebihi hari kerja' }, { status: 400 });
-    }
-    if (terlambat > hadir) {
-      return NextResponse.json({ error: 'Terlambat tidak boleh melebihi hadir' }, { status: 400 });
+    if (terlambat != null && terlambat < 0) {
+      return NextResponse.json({ error: 'Menit terlambat tidak boleh negatif' }, { status: 400 });
     }
 
     const { error } = await supabaseAdmin

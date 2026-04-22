@@ -139,7 +139,21 @@ export async function GET(request: NextRequest) {
     weeklyEntryMap[e.template_id] = Number(e.actual_value);
   }
 
-  const allEntries = (entries || []).map((e) => {
+  // Auto-fetch Trello OTD for weekly view — scoped to the requested week
+  const weeklyOtdTemplate = (templates || []).find((t) => {
+    const name = t.kpi_name.toLowerCase();
+    return name.includes('on-time delivery') || name.includes('on time delivery') || name.includes('otd');
+  });
+  let weeklyTrelloOtd: { otdPercentage: number; onTime: number; late: number; total: number } | null = null;
+  if (weeklyOtdTemplate) {
+    weeklyTrelloOtd = await fetchTrelloOtd(targetUser.division_id, year, month, week);
+    if (weeklyTrelloOtd) {
+      weeklyEntryMap[weeklyOtdTemplate.id] = weeklyTrelloOtd.otdPercentage;
+    }
+  }
+
+  // Build allEntries, overlaying Trello OTD on top of any stored entry
+  const baseEntries = (entries || []).map((e) => {
     const t = (templates || []).find((tpl) => tpl.id === e.template_id);
     const rateDisplay = t && isRateKpi(t)
       ? computeRateActual(
@@ -147,17 +161,24 @@ export async function GET(request: NextRequest) {
           (tid) => weeklyEntryMap[tid] ?? 0
         )
       : null;
-    return { ...e, rate_display: rateDisplay };
+    const overlayOtd = weeklyOtdTemplate && weeklyTrelloOtd && e.template_id === weeklyOtdTemplate.id;
+    return {
+      ...e,
+      actual_value: overlayOtd ? weeklyTrelloOtd!.otdPercentage : e.actual_value,
+      rate_display: rateDisplay,
+    };
   });
 
-  // Auto-fetch Trello OTD for weekly view too
-  const weeklyOtdTemplate = (templates || []).find((t) => {
-    const name = t.kpi_name.toLowerCase();
-    return name.includes('on-time delivery') || name.includes('on time delivery') || name.includes('otd');
-  });
-  let weeklyTrelloOtd: { otdPercentage: number; onTime: number; late: number; total: number } | null = null;
-  if (weeklyOtdTemplate) {
-    weeklyTrelloOtd = await fetchTrelloOtd(targetUser.division_id, year, month);
+  // If the OTD template has no stored entry yet, synthesise one from Trello
+  const allEntries: unknown[] = [...baseEntries];
+  if (weeklyOtdTemplate && weeklyTrelloOtd && !baseEntries.some((e) => e.template_id === weeklyOtdTemplate.id)) {
+    allEntries.push({
+      id: `trello-otd-${weeklyOtdTemplate.id}`,
+      template_id: weeklyOtdTemplate.id,
+      actual_value: weeklyTrelloOtd.otdPercentage,
+      rate_display: null,
+      notes: `Trello: ${weeklyTrelloOtd.onTime}/${weeklyTrelloOtd.total} on-time`,
+    });
   }
 
   return NextResponse.json({

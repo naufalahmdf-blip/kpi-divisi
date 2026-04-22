@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
         division: (u.divisions as unknown as { id: string; name: string; slug: string } | null)?.name || 'N/A',
         division_id: u.division_id,
         totalScore,
-        grade: getGrade(totalScore, 120),
+        grade: getGrade(totalScore, 100),
         scores,
       };
     });
@@ -176,7 +176,7 @@ export async function GET(request: NextRequest) {
       return {
         id: d.id, name: d.name, slug: d.slug,
         averageScore: Math.round(avgScore * 100) / 100,
-        grade: getGrade(avgScore, 120),
+        grade: getGrade(avgScore, 100),
         userCount: divUsers.length,
         categoryBreakdown,
       };

@@ -20,7 +20,8 @@ export function calculateAchievement(
   if (actual === 0) return 0;
 
   if (formulaType === 'higher_better') {
-    return actual / target; // no cap — exceeding target gives > 100%
+    // capped at 1 — overshoot tidak memberi bonus, hanya "mempertahankan 100"
+    return Math.min(actual / target, 1);
   } else {
     // lower_better: capped at 1 (can't do better than perfect)
     if (actual <= target) return 1;
@@ -35,6 +36,21 @@ export function calculateWeightedScore(achievement: number, weight: number): num
 /** Fixed 4 weeks per month. Week 1: 1-7, Week 2: 8-14, Week 3: 15-21, Week 4: 22-end */
 export function getWeeksInMonth(): number {
   return 4;
+}
+
+/**
+ * Returns the calendar date range for a given week slot in a month.
+ * Week 1: 1-7, Week 2: 8-14, Week 3: 15-21, Week 4: 22-end of month.
+ * Range is inclusive: start = 00:00:00.000, end = 23:59:59.999.
+ */
+export function getWeekDateRange(year: number, month: number, week: number): { start: Date; end: Date } {
+  const startDay = (week - 1) * 7 + 1;
+  const lastDayOfMonth = new Date(year, month, 0).getDate();
+  const endDay = week === 4 ? lastDayOfMonth : Math.min(week * 7, lastDayOfMonth);
+  return {
+    start: new Date(year, month - 1, startDay, 0, 0, 0, 0),
+    end: new Date(year, month - 1, endDay, 23, 59, 59, 999),
+  };
 }
 
 /**

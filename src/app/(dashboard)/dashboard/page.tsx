@@ -49,7 +49,7 @@ interface DashboardData {
   };
   divisionSummary: { id: string; name: string; averageScore: number; grade: string; userCount: number }[];
   topEmployees: { id: string; name: string; email: string; avatar_url: string | null; division: string; totalScore: number; grade: string; scores: { kpi_name: string; category: string; weight: number; target: number; actual: number; achievement: number; weighted: number }[] }[];
-  lateEmployees: { id: string; name: string; division: string; lateRate: number; terlambat: number; hadir: number }[];
+  lateEmployees: { id: string; name: string; division: string; terlambat: number; hadir: number }[];
   stats: { totalUsers: number; totalDivisions: number };
 }
 
@@ -119,7 +119,7 @@ export default function DashboardPage() {
     const companyAvg = activeDivisions.length > 0
       ? Math.round(activeDivisions.reduce((sum, d) => sum + d.averageScore, 0) / activeDivisions.length * 100) / 100
       : 0;
-    const companyGrade = getGrade(companyAvg, 120);
+    const companyGrade = getGrade(companyAvg, 100);
     const bestDivision = activeDivisions[0] || null;
     const maxScore = Math.max(...sortedDivisions.map(d => d.averageScore), 1);
     const topOne = data.topEmployees[0] || null;
@@ -155,7 +155,7 @@ export default function DashboardPage() {
                   <span className={cn('px-3 py-1.5 rounded-xl border text-sm font-bold', getGradeBg(companyGrade), getGradeColor(companyGrade))}>
                     Grade {companyGrade}
                   </span>
-                  <p className="text-xs text-gray-500 mt-1.5">dari 120 poin</p>
+                  <p className="text-xs text-gray-500 mt-1.5">dari 100 poin</p>
                 </div>
               </div>
             </div>
@@ -378,11 +378,11 @@ export default function DashboardPage() {
                         <div className="text-right flex-shrink-0">
                           <p className={cn(
                             'text-sm font-bold',
-                            emp.lateRate > 15 ? 'text-red-400' : emp.lateRate > 5 ? 'text-amber-400' : 'text-emerald-400'
+                            emp.terlambat > 60 ? 'text-red-400' : emp.terlambat > 30 ? 'text-amber-400' : 'text-emerald-400'
                           )}>
-                            {emp.lateRate.toFixed(1)}%
+                            {emp.terlambat} menit
                           </p>
-                          <p className="text-[10px] text-gray-500">{emp.terlambat}/{emp.hadir} hari</p>
+                          <p className="text-[10px] text-gray-500">toleransi 60 menit/bln</p>
                         </div>
                       </div>
                     ))}

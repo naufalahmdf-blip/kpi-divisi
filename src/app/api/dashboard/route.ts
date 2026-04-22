@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
     const attendanceScore = calculateAttendanceScore(getAttendance(user.id));
     const finalTotal = calculateFinalScore(kpiTotal, attendanceScore);
     myScore = finalTotal;
-    myGrade = getGrade(finalTotal, 120);
+    myGrade = getGrade(finalTotal, 100);
   }
 
   // Division summary
@@ -143,7 +143,7 @@ export async function GET(request: NextRequest) {
     });
 
     const avg = totalDiv / divUsers.length;
-    return { ...d, averageScore: Math.round(avg * 100) / 100, grade: getGrade(avg, 120), userCount: divUsers.length };
+    return { ...d, averageScore: Math.round(avg * 100) / 100, grade: getGrade(avg, 100), userCount: divUsers.length };
   });
 
   // Top 5 employees
@@ -177,30 +177,28 @@ export async function GET(request: NextRequest) {
       avatar_url: u.avatar_url || null,
       division: (u.divisions as unknown as { name: string } | null)?.name || 'N/A',
       totalScore,
-      grade: getGrade(totalScore, 120),
+      grade: getGrade(totalScore, 100),
       scores,
     };
   });
 
   employeeScores.sort((a, b) => b.totalScore - a.totalScore);
 
-  // Late employees — sorted by late rate descending (only those with attendance data)
+  // Late employees — sorted by total keterlambatan (menit) descending
   const lateEmployees = (allUsers || [])
     .map((u) => {
       const att = getAttendance(u.id);
-      if (!att || att.hadir === 0) return null;
-      const lateRate = (att.terlambat / att.hadir) * 100;
+      if (!att || (att.terlambat ?? 0) === 0) return null;
       return {
         id: u.id,
         name: u.full_name,
         division: (u.divisions as unknown as { name: string } | null)?.name || 'N/A',
-        lateRate: Math.round(lateRate * 10) / 10,
         terlambat: att.terlambat,
         hadir: att.hadir,
       };
     })
     .filter((e): e is NonNullable<typeof e> => e !== null)
-    .sort((a, b) => b.lateRate - a.lateRate)
+    .sort((a, b) => b.terlambat - a.terlambat)
     .slice(0, 5);
 
   return NextResponse.json({

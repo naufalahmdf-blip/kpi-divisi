@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { CalendarCheck, Pencil, X, CheckCircle, AlertCircle, Users } from 'lucide-react';
+import { CalendarCheck, Pencil, X, CheckCircle, AlertCircle, Users, Clock } from 'lucide-react';
 import { cn, getMonthName, getCurrentPeriod } from '@/lib/utils';
-import { calculateAttendanceScore, getAttendanceRates } from '@/lib/attendance';
+import { calculateAttendanceScore, LATENESS_BUFFER_MINUTES, LATENESS_MAX_SCORE } from '@/lib/attendance';
 
 interface AttendanceEntry {
   id?: string;
@@ -12,6 +12,7 @@ interface AttendanceEntry {
   month: number;
   hari_kerja: number;
   hadir: number;
+  /** Total menit keterlambatan akumulatif per bulan. */
   terlambat: number;
   sakit: number;
   cuti: number;
@@ -29,7 +30,7 @@ interface UserAttendance {
 interface ModalState {
   open: boolean;
   user: UserAttendance | null;
-  form: { tepat_waktu: string; terlambat: string; tidak_hadir: string; sakit: string; cuti: string };
+  form: { terlambat: string; tidak_hadir: string; sakit: string; cuti: string };
 }
 
 export default function AdminAbsensiPage() {
@@ -42,7 +43,7 @@ export default function AdminAbsensiPage() {
   const [modal, setModal] = useState<ModalState>({
     open: false,
     user: null,
-    form: { tepat_waktu: '', terlambat: '', tidak_hadir: '', sakit: '', cuti: '' },
+    form: { terlambat: '', tidak_hadir: '', sakit: '', cuti: '' },
   });
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
@@ -72,7 +73,6 @@ export default function AdminAbsensiPage() {
       open: true,
       user: u,
       form: {
-        tepat_waktu: a ? String(Math.max(0, a.hadir - a.terlambat)) : '',
         terlambat: a ? String(a.terlambat) : '',
         tidak_hadir: a ? String(Math.max(0, a.hari_kerja - a.hadir - a.sakit - a.cuti)) : '',
         sakit: a ? String(a.sakit) : '',
@@ -85,20 +85,15 @@ export default function AdminAbsensiPage() {
 
   const parseNum = (v: string) => parseInt(v) || 0;
 
-  const fTepat = parseNum(modal.form.tepat_waktu);
   const fTerlambat = parseNum(modal.form.terlambat);
   const fTidakHadir = parseNum(modal.form.tidak_hadir);
   const fSakit = parseNum(modal.form.sakit);
   const fCuti = parseNum(modal.form.cuti);
-  const jumlahMasuk = fTepat + fTerlambat; // hadir = tepat_waktu + terlambat
-  const hariKerja = jumlahMasuk + fTidakHadir + fSakit + fCuti;
 
-  const formAttendance = hariKerja > 0
-    ? { hari_kerja: hariKerja, hadir: jumlahMasuk, terlambat: fTerlambat, sakit: fSakit, cuti: fCuti }
-    : null;
+  const formAttendance = { hari_kerja: fTidakHadir + fSakit + fCuti, hadir: 0, terlambat: fTerlambat, sakit: fSakit, cuti: fCuti };
 
-  const { attendanceRate, tepatWaktuRate } = getAttendanceRates(formAttendance);
   const previewScore = calculateAttendanceScore(formAttendance);
+  const withinBuffer = fTerlambat <= LATENESS_BUFFER_MINUTES;
 
   const handleSave = async () => {
     if (!modal.user) return;
@@ -111,8 +106,8 @@ export default function AdminAbsensiPage() {
           user_id: modal.user.id,
           year,
           month,
-          hari_kerja: hariKerja,
-          hadir: jumlahMasuk,
+          hari_kerja: fTidakHadir + fSakit + fCuti,
+          hadir: 0,
           terlambat: fTerlambat,
           sakit: fSakit,
           cuti: fCuti,
@@ -159,7 +154,7 @@ export default function AdminAbsensiPage() {
           <CalendarCheck className="w-6 h-6 sm:w-7 sm:h-7 text-brand-300 flex-shrink-0" />
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-white">Manajemen Absensi</h1>
-            <p className="text-gray-500 text-xs sm:text-sm">Input data kehadiran karyawan per bulan</p>
+            <p className="text-gray-500 text-xs sm:text-sm">Input data kehadiran & menit keterlambatan per bulan</p>
           </div>
         </div>
         {/* Period Selector */}
@@ -229,7 +224,7 @@ export default function AdminAbsensiPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-white/[0.06]">
-                    {['Karyawan', 'Divisi', 'Tepat Waktu', 'Terlambat', 'Tdk Hadir', 'Sakit', 'Cuti', 'Jml Masuk', 'Kehadiran', 'Status', ''].map((h) => (
+                    {['Karyawan', 'Divisi', 'Menit Terlambat', 'Tdk Hadir', 'Sakit', 'Cuti', 'Skor', 'Status', ''].map((h) => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                         {h}
                       </th>
@@ -239,8 +234,8 @@ export default function AdminAbsensiPage() {
                 <tbody className="divide-y divide-white/[0.04]">
                   {users.map((u) => {
                     const a = u.attendance;
-                    const rates = getAttendanceRates(a);
                     const score = calculateAttendanceScore(a);
+                    const lateOk = (a?.terlambat ?? 0) <= LATENESS_BUFFER_MINUTES;
                     return (
                       <tr key={u.id} className="hover:bg-white/[0.02] transition-colors">
                         <td className="px-4 py-3">
@@ -260,19 +255,23 @@ export default function AdminAbsensiPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-xs text-gray-400">{u.division}</td>
-                        <td className="px-4 py-3 text-xs text-emerald-400 text-center font-medium">{a ? Math.max(0, a.hadir - a.terlambat) : '—'}</td>
-                        <td className="px-4 py-3 text-xs text-amber-400 text-center font-medium">{a ? a.terlambat : '—'}</td>
-                        <td className="px-4 py-3 text-xs text-red-400 text-center">{a ? Math.max(0, a.hari_kerja - a.hadir - a.sakit - a.cuti) : '—'}</td>
+                        <td className="px-4 py-3 text-xs text-center font-medium">
+                          {a ? (
+                            <span className={cn(lateOk ? 'text-emerald-400' : a.terlambat <= 120 ? 'text-amber-400' : 'text-red-400')}>
+                              {a.terlambat}
+                            </span>
+                          ) : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-red-400 text-center">{a ? Math.max(0, (a.hari_kerja || 0) - (a.hadir || 0) - (a.sakit || 0) - (a.cuti || 0)) : '—'}</td>
                         <td className="px-4 py-3 text-xs text-blue-400 text-center">{a ? a.sakit : '—'}</td>
                         <td className="px-4 py-3 text-xs text-purple-400 text-center">{a ? a.cuti : '—'}</td>
-                        <td className="px-4 py-3 text-xs text-gray-300 text-center font-medium">{a ? a.hadir : '—'}</td>
                         <td className="px-4 py-3 text-xs">
                           {a ? (
                             <div>
-                              <p className={cn('font-semibold', rates.attendanceRate >= 95 ? 'text-emerald-400' : rates.attendanceRate >= 80 ? 'text-amber-400' : 'text-red-400')}>
-                                {rates.attendanceRate.toFixed(1)}%
+                              <p className={cn('font-semibold', lateOk ? 'text-emerald-400' : a.terlambat <= 120 ? 'text-amber-400' : 'text-red-400')}>
+                                {score.toFixed(1)}/{LATENESS_MAX_SCORE} pts
                               </p>
-                              <p className="text-gray-500 text-[11px]">{score.toFixed(1)}/20 pts</p>
+                              <p className="text-gray-500 text-[11px]">toleransi {LATENESS_BUFFER_MINUTES} menit</p>
                             </div>
                           ) : '—'}
                         </td>
@@ -307,7 +306,6 @@ export default function AdminAbsensiPage() {
             <div className="md:hidden divide-y divide-white/[0.04]">
               {users.map((u) => {
                 const a = u.attendance;
-                const rates = getAttendanceRates(a);
                 const score = calculateAttendanceScore(a);
                 return (
                   <div key={u.id} className="p-4 flex items-center gap-3">
@@ -324,7 +322,7 @@ export default function AdminAbsensiPage() {
                       <p className="text-xs text-gray-500 truncate">{u.division}</p>
                       {a ? (
                         <p className="text-xs text-gray-400 mt-0.5">
-                          Masuk: {a.hadir} &bull; Tepat: {Math.max(0, a.hadir - a.terlambat)} &bull; Kehadiran: {rates.attendanceRate.toFixed(1)}% &bull; {score.toFixed(1)} pts
+                          Terlambat: {a.terlambat} menit &bull; {score.toFixed(1)}/{LATENESS_MAX_SCORE} pts
                         </p>
                       ) : (
                         <p className="text-xs text-amber-400 mt-0.5">Belum diisi</p>
@@ -369,12 +367,11 @@ export default function AdminAbsensiPage() {
               {/* Input Grid */}
               <div className="grid grid-cols-2 gap-3">
                 {([
-                  { key: 'tepat_waktu', label: 'Tepat Waktu', color: 'text-emerald-400' },
-                  { key: 'terlambat', label: 'Terlambat', color: 'text-amber-400' },
-                  { key: 'tidak_hadir', label: 'Tidak Hadir', color: 'text-red-400' },
-                  { key: 'sakit', label: 'Sakit', color: 'text-blue-400' },
-                  { key: 'cuti', label: 'Cuti', color: 'text-purple-400' },
-                ] as { key: keyof typeof modal.form; label: string; color: string }[]).map(({ key, label, color }) => (
+                  { key: 'terlambat', label: 'Terlambat (menit)', color: 'text-amber-400', hint: `Akumulasi bulanan (toleransi ${LATENESS_BUFFER_MINUTES})` },
+                  { key: 'tidak_hadir', label: 'Tidak Hadir (hari)', color: 'text-red-400', hint: 'Alpha tanpa keterangan' },
+                  { key: 'sakit', label: 'Sakit (hari)', color: 'text-blue-400', hint: '' },
+                  { key: 'cuti', label: 'Cuti (hari)', color: 'text-purple-400', hint: '' },
+                ] as { key: keyof typeof modal.form; label: string; color: string; hint: string }[]).map(({ key, label, color, hint }) => (
                   <div key={key}>
                     <label className={cn('text-xs font-medium mb-1.5 block', color)}>{label}</label>
                     <input
@@ -385,53 +382,41 @@ export default function AdminAbsensiPage() {
                       className="w-full bg-[#1a1a2e] border border-white/[0.08] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-brand-500 transition-colors"
                       placeholder="0"
                     />
+                    {hint && <p className="text-[10px] text-gray-600 mt-1">{hint}</p>}
                   </div>
                 ))}
-                {/* Jumlah Masuk — auto computed */}
-                <div>
-                  <label className="text-xs font-medium mb-1.5 block text-gray-400">Jumlah Masuk (auto)</label>
-                  <div className="w-full bg-white/[0.04] border border-white/[0.04] rounded-xl px-3 py-2.5 text-gray-300 text-sm font-semibold">
-                    {jumlahMasuk}
-                  </div>
-                </div>
               </div>
 
               {/* Preview Score */}
-              {hariKerja > 0 && (
-                <div className="bg-[#0c0c14] border border-white/[0.06] rounded-xl p-4 space-y-2.5">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Preview Skor Absensi</p>
-                  <div className="space-y-2">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs text-gray-300">Kehadiran ({attendanceRate.toFixed(1)}% / target ≥95%)</span>
-                        <span className="text-xs font-bold text-emerald-400">
-                          {(Math.min(attendanceRate / 95, 1) * 15).toFixed(1)}/15
-                        </span>
-                      </div>
-                      <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
-                        <div className="h-full rounded-full bg-emerald-500 transition-all duration-500"
-                          style={{ width: `${Math.min(attendanceRate / 95 * 100, 100)}%` }} />
-                      </div>
+              <div className="bg-[#0c0c14] border border-white/[0.06] rounded-xl p-4 space-y-2.5">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Preview Skor Keterlambatan</p>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-gray-300 flex items-center gap-1.5">
+                        <Clock className="w-3 h-3" />
+                        {fTerlambat} menit (toleransi ≤ {LATENESS_BUFFER_MINUTES})
+                      </span>
+                      <span className={cn('text-xs font-bold', withinBuffer ? 'text-emerald-400' : fTerlambat <= 120 ? 'text-amber-400' : 'text-red-400')}>
+                        {previewScore.toFixed(2)}/{LATENESS_MAX_SCORE}
+                      </span>
                     </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs text-gray-300">Tepat Waktu ({tepatWaktuRate.toFixed(1)}% / target ≥90%)</span>
-                        <span className="text-xs font-bold text-amber-400">
-                          {(Math.min(tepatWaktuRate / 90, 1) * 5).toFixed(1)}/5
-                        </span>
-                      </div>
-                      <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
-                        <div className="h-full rounded-full bg-amber-500 transition-all duration-500"
-                          style={{ width: `${Math.min(tepatWaktuRate / 90, 1) * 100}%` }} />
-                      </div>
+                    <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+                      <div
+                        className={cn('h-full rounded-full transition-all duration-500', withinBuffer ? 'bg-emerald-500' : fTerlambat <= 120 ? 'bg-amber-500' : 'bg-red-500')}
+                        style={{ width: `${(previewScore / LATENESS_MAX_SCORE) * 100}%` }}
+                      />
                     </div>
                   </div>
+                  <p className="text-[11px] text-gray-500">
+                    {withinBuffer
+                      ? `✓ Masih dalam toleransi. Skor penuh ${LATENESS_MAX_SCORE} pts.`
+                      : `Di atas toleransi. Pro-rata: ${LATENESS_MAX_SCORE} × (${LATENESS_BUFFER_MINUTES}/${fTerlambat}) = ${previewScore.toFixed(2)} pts.`}
+                  </p>
                   <div className="flex items-center justify-between pt-1 border-t border-white/[0.06]">
                     <span className="text-xs font-semibold text-white">Total Skor Absensi</span>
-                    <span className="text-base font-bold text-brand-300">{previewScore.toFixed(1)} / 20 pts</span>
+                    <span className="text-base font-bold text-brand-300">{previewScore.toFixed(2)} / {LATENESS_MAX_SCORE} pts</span>
                   </div>
                 </div>
-              )}
             </div>
 
             {/* Modal Footer */}
@@ -444,7 +429,7 @@ export default function AdminAbsensiPage() {
               </button>
               <button
                 onClick={handleSave}
-                disabled={saving || hariKerja === 0}
+                disabled={saving}
                 className="px-5 py-2 bg-brand-500 hover:bg-brand-400 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-colors"
               >
                 {saving ? 'Menyimpan...' : 'Simpan'}

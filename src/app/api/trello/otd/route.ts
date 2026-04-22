@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
+import { getWeekDateRange } from '@/lib/utils';
 
 interface TrelloCard {
   id: string;
@@ -117,6 +118,8 @@ export async function GET(request: NextRequest) {
   const divisionId = searchParams.get('division_id');
   const year = parseInt(searchParams.get('year') || '0');
   const month = parseInt(searchParams.get('month') || '0');
+  const weekParam = searchParams.get('week');
+  const week = weekParam ? parseInt(weekParam) : null;
 
   if (!divisionId) {
     return NextResponse.json({ error: 'division_id diperlukan' }, { status: 400 });
@@ -147,12 +150,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Filter by month/year if provided
+    // Filter by month/year if provided, then optionally narrow to a single week
     let filtered = allDoneCards;
     if (year > 0 && month > 0) {
+      const weekRange = week && week >= 1 && week <= 4 ? getWeekDateRange(year, month, week) : null;
       filtered = allDoneCards.filter(({ card }) => {
         const due = new Date(card.due!);
-        return due.getFullYear() === year && due.getMonth() + 1 === month;
+        if (due.getFullYear() !== year || due.getMonth() + 1 !== month) return false;
+        if (weekRange && (due < weekRange.start || due > weekRange.end)) return false;
+        return true;
       });
     }
 

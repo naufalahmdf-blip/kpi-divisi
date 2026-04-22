@@ -138,7 +138,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       email: u.email,
       avatar_url: u.avatar_url || null,
       totalScore: Math.round(totalScore * 100) / 100,
-      grade: getGrade(totalScore, 120),
+      grade: getGrade(totalScore, 100),
       scores,
     };
   });
@@ -154,7 +154,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   return NextResponse.json({
     division,
     averageScore: Math.round(avgScore * 100) / 100,
-    grade: getGrade(avgScore, 120),
+    grade: getGrade(avgScore, 100),
     userCount: members.length,
     categoryBreakdown,
     members,

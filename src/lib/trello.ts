@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase';
+import { getWeekDateRange } from '@/lib/utils';
 
 interface TrelloCard {
   id: string;
@@ -39,12 +40,15 @@ async function fetchBoardData(boardId: string) {
 
 /**
  * Fetch OTD percentage from Trello for a division in a given month.
+ * If `week` (1-4) is provided, scope cards to that week's date range
+ * (week 1 = 1-7, week 2 = 8-14, week 3 = 15-21, week 4 = 22-end).
  * Returns null if Trello is not configured or fetch fails.
  */
 export async function fetchTrelloOtd(
   divisionId: string,
   year: number,
-  month: number
+  month: number,
+  week?: number | null
 ): Promise<{ otdPercentage: number; onTime: number; late: number; total: number } | null> {
   if (!TRELLO_API_KEY || !TRELLO_TOKEN) return null;
 
@@ -69,10 +73,13 @@ export async function fetchTrelloOtd(
       }
     }
 
-    // Filter by month/year
+    // Filter by month/year, and optionally narrow to a single week
+    const weekRange = week && week >= 1 && week <= 4 ? getWeekDateRange(year, month, week) : null;
     const filtered = allDoneCards.filter(({ card }) => {
       const due = new Date(card.due!);
-      return due.getFullYear() === year && due.getMonth() + 1 === month;
+      if (due.getFullYear() !== year || due.getMonth() + 1 !== month) return false;
+      if (weekRange && (due < weekRange.start || due > weekRange.end)) return false;
+      return true;
     });
 
     let onTime = 0;
