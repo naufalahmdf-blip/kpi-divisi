@@ -165,7 +165,16 @@ export async function syncDivisionTrello(divisionId: string): Promise<DivisionSy
       const existing = existingMap.get(card.id);
       const firstDone = firstDoneDates[idx] ?? card.dateLastActivity;
 
-      const payload: Record<string, unknown> = {
+      // Semua field harus hadir di payload. Supabase bulk-upsert fill NULL
+      // untuk field yang missing — itu akan violate NOT NULL constraint untuk
+      // card baru yang belum punya row existing.
+      const due = existing?.due_overridden ? existing.due : card.due;
+      const completedAt = existing?.completed_at_overridden ? existing.completed_at : firstDone;
+      const isOnTime = existing?.is_on_time_overridden
+        ? existing.is_on_time
+        : computeIsOnTime(due, completedAt);
+
+      return {
         card_id: card.id,
         division_id: divisionId,
         board_id: boardId,
@@ -175,39 +184,28 @@ export async function syncDivisionTrello(divisionId: string): Promise<DivisionSy
         member_ids: card.idMembers || [],
         member_names: (card.idMembers || []).map((id) => memberMap[id] || id),
         original_due: originalDues[idx],
+        due,
+        completed_at: completedAt,
+        is_on_time: isOnTime,
+        due_overridden: existing?.due_overridden ?? false,
+        completed_at_overridden: existing?.completed_at_overridden ?? false,
+        is_on_time_overridden: existing?.is_on_time_overridden ?? false,
+        excluded: existing?.excluded ?? false,
+        admin_note: existing?.admin_note ?? null,
         deleted_on_trello: false,
         synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-
-      if (existing?.due_overridden) payload.due = existing.due;
-      else payload.due = card.due;
-
-      if (existing?.completed_at_overridden) payload.completed_at = existing.completed_at;
-      else payload.completed_at = firstDone;
-
-      if (existing?.is_on_time_overridden) payload.is_on_time = existing.is_on_time;
-      else payload.is_on_time = computeIsOnTime(
-        payload.due as string | null,
-        payload.completed_at as string | null
-      );
-
-      if (existing) {
-        payload.due_overridden = existing.due_overridden;
-        payload.completed_at_overridden = existing.completed_at_overridden;
-        payload.is_on_time_overridden = existing.is_on_time_overridden;
-        payload.excluded = existing.excluded;
-        payload.admin_note = existing.admin_note;
-      }
-
-      return payload;
     });
 
     if (upserts.length > 0) {
       const { error: upsertErr } = await supabaseAdmin
         .from('trello_card_snapshots')
         .upsert(upserts, { onConflict: 'card_id' });
-      if (upsertErr) return { ok: false, divisionId, error: upsertErr.message };
+      if (upsertErr) {
+        console.error('[trello-sync] upsert error:', upsertErr);
+        return { ok: false, divisionId, error: `DB upsert error: ${upsertErr.message}` };
+      }
     }
 
     const orphanedIds = (existingSnapshots || [])
@@ -222,6 +220,7 @@ export async function syncDivisionTrello(divisionId: string): Promise<DivisionSy
 
     return { ok: true, divisionId, synced: upserts.length, orphaned: orphanedIds.length };
   } catch (err) {
+    console.error('[trello-sync] exception:', err);
     const message = err instanceof Error ? err.message : 'Gagal sync Trello';
     return { ok: false, divisionId, error: message };
   }

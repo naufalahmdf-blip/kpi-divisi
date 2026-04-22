@@ -27,6 +27,8 @@ export async function POST(request: NextRequest) {
 
   const result = await syncDivisionTrello(divisionId);
   if (!result.ok) {
+    // Log ke server console biar mudah debug di terminal dev
+    console.error('[trello-sync] failed:', { divisionId, error: result.error });
     const status = result.error.includes('belum dikonfigurasi') ? 404 : 500;
     return NextResponse.json({ error: result.error }, { status });
   }
