@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Save, Loader2, Target, CheckCircle2, AlertCircle, Calendar, CalendarDays, Info, ArrowLeft, CalendarCheck, ExternalLink, RefreshCw, X, CheckCircle, XCircle, Calculator } from 'lucide-react';
+import { Save, Loader2, Target, CheckCircle2, AlertCircle, Calendar, CalendarDays, Info, ArrowLeft, CalendarCheck, ExternalLink, RefreshCw, X, CheckCircle, XCircle, Calculator, Pencil } from 'lucide-react';
 import PeriodSelector from '@/components/PeriodSelector';
 
 import { useToast } from '@/components/Toast';
@@ -75,8 +75,11 @@ export default function AdminKpiEditPage() {
   const [attendance, setAttendance] = useState<AttendanceEntry | null>(null);
   const [trelloOtd, setTrelloOtd] = useState<{ otdPercentage: number; onTime: number; late: number; total: number } | null>(null);
   const [trelloRefreshing, setTrelloRefreshing] = useState(false);
-  const [trelloDetails, setTrelloDetails] = useState<{ name: string; list: string; board: string; due: string; completed: string; is_on_time: boolean; original_due: string | null; due_changed: boolean; members: string[] }[]>([]);
+  const [trelloDetails, setTrelloDetails] = useState<{ card_id: string; name: string; list: string; board: string; due: string; completed: string; is_on_time: boolean; excluded: boolean; members: string[]; admin_note: string | null; due_overridden: boolean; completed_at_overridden: boolean; is_on_time_overridden: boolean; original_due: string | null; due_changed: boolean }[]>([]);
   const [showTrelloDetail, setShowTrelloDetail] = useState(false);
+  const [editCardId, setEditCardId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<{ due: string; completed_at: string; is_on_time: 'auto' | 'yes' | 'no'; excluded: boolean; admin_note: string }>({ due: '', completed_at: '', is_on_time: 'auto', excluded: false, admin_note: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
   const [showVideoCalc, setShowVideoCalc] = useState(false);
   const [videoCalcTemplateId, setVideoCalcTemplateId] = useState('');
 
@@ -267,41 +270,55 @@ export default function AdminKpiEditPage() {
     if (values.week) setWeek(values.week);
   };
 
+  const readTrelloFromDb = async () => {
+    if (!divisionId) return;
+    const otdQuery = new URLSearchParams({ division_id: divisionId, year: year.toString(), month: month.toString() });
+    if (viewMode === 'weekly') otdQuery.append('week', week.toString());
+    const res = await fetch(`/api/trello/otd?${otdQuery}`);
+    if (!res.ok) throw new Error('gagal baca snapshot');
+    const json = await res.json();
+    const newOtd = { otdPercentage: json.otd_percentage, onTime: json.on_time, late: json.late, total: json.total };
+    setTrelloOtd(newOtd);
+    const details = json.details || [];
+    setTrelloDetails(details);
+    // Recompute per-user OTD dari details (exclude card yang excluded)
+    const otdTpl = templates.find((t) => isOtdTemplate(t));
+    if (otdTpl && userName) {
+      const nameLower = userName.toLowerCase();
+      const userCards = details.filter((card: { members: string[]; excluded: boolean }) =>
+        !card.excluded &&
+        card.members.some((m: string) => {
+          const ml = m.toLowerCase();
+          return ml.includes(nameLower) || nameLower.includes(ml);
+        })
+      );
+      const onTime = userCards.filter((c: { is_on_time: boolean }) => c.is_on_time).length;
+      const total = userCards.length;
+      const pct = total > 0 ? Math.round((onTime / total) * 10000) / 100 : 0;
+      setEntries((prev) => ({
+        ...prev,
+        [otdTpl.id]: { actual_value: String(pct), notes: prev[otdTpl.id]?.notes || '' },
+      }));
+    }
+  };
+
   const refreshTrelloOtd = async () => {
     if (!divisionId) return;
     setTrelloRefreshing(true);
     try {
-      const otdQuery = new URLSearchParams({ division_id: divisionId, year: year.toString(), month: month.toString() });
-      if (viewMode === 'weekly') otdQuery.append('week', week.toString());
-      const res = await fetch(`/api/trello/otd?${otdQuery}`);
-      if (res.ok) {
-        const json = await res.json();
-        const newOtd = { otdPercentage: json.otd_percentage, onTime: json.on_time, late: json.late, total: json.total };
-        setTrelloOtd(newOtd);
-        const details = json.details || [];
-        setTrelloDetails(details);
-        // Compute per-user OTD
-        const otdTpl = templates.find((t) => isOtdTemplate(t));
-        if (otdTpl && userName) {
-          const nameLower = userName.toLowerCase();
-          const userCards = details.filter((card: { members: string[] }) =>
-            card.members.some((m: string) => {
-              const ml = m.toLowerCase();
-              return ml.includes(nameLower) || nameLower.includes(ml);
-            })
-          );
-          const onTime = userCards.filter((c: { is_on_time: boolean }) => c.is_on_time).length;
-          const total = userCards.length;
-          const pct = total > 0 ? Math.round((onTime / total) * 10000) / 100 : 0;
-          setEntries((prev) => ({
-            ...prev,
-            [otdTpl.id]: { actual_value: String(pct), notes: prev[otdTpl.id]?.notes || '' },
-          }));
-        }
-        toast('Data Trello OTD berhasil diperbarui', 'success');
-      } else {
-        toast('Gagal mengambil data Trello', 'error');
+      // Step 1: sync dari Trello ke DB (preserve override admin)
+      const syncRes = await fetch('/api/admin/trello/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ division_id: divisionId }),
+      });
+      if (!syncRes.ok) {
+        const json = await syncRes.json().catch(() => ({}));
+        toast(json.error || 'Gagal sync dari Trello', 'error');
       }
+      // Step 2: baca DB snapshot (selalu lakukan walau sync gagal)
+      await readTrelloFromDb();
+      if (syncRes.ok) toast('Data Trello OTD berhasil diperbarui', 'success');
     } catch {
       toast('Gagal mengambil data Trello', 'error');
     } finally {
@@ -336,10 +353,85 @@ export default function AdminKpiEditPage() {
     );
   }, [trelloDetails, userName]);
 
+  const openCardEdit = (card: typeof trelloDetails[number]) => {
+    setEditCardId(card.card_id);
+    const toLocalDt = (iso: string | null) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    setEditForm({
+      due: toLocalDt(card.due),
+      completed_at: toLocalDt(card.completed),
+      is_on_time: card.is_on_time_overridden ? (card.is_on_time ? 'yes' : 'no') : 'auto',
+      excluded: card.excluded,
+      admin_note: card.admin_note || '',
+    });
+  };
+
+  const saveCardEdit = async () => {
+    if (!editCardId) return;
+    setSavingEdit(true);
+    try {
+      const body: Record<string, unknown> = {
+        due: editForm.due ? new Date(editForm.due).toISOString() : null,
+        completed_at: editForm.completed_at ? new Date(editForm.completed_at).toISOString() : null,
+        excluded: editForm.excluded,
+        admin_note: editForm.admin_note || null,
+      };
+      if (editForm.is_on_time === 'auto') {
+        body.reset = ['is_on_time'];
+      } else {
+        body.is_on_time = editForm.is_on_time === 'yes';
+      }
+      const res = await fetch(`/api/admin/trello/cards/${editCardId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        toast(json.error || 'Gagal menyimpan override', 'error');
+        return;
+      }
+      toast('Override berhasil disimpan', 'success');
+      setEditCardId(null);
+      await readTrelloFromDb();
+    } catch {
+      toast('Gagal menyimpan override', 'error');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const resetCardOverride = async (cardId: string) => {
+    setSavingEdit(true);
+    try {
+      const res = await fetch(`/api/admin/trello/cards/${cardId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reset: ['due', 'completed_at', 'is_on_time'], excluded: false, admin_note: null }),
+      });
+      if (!res.ok) {
+        toast('Gagal reset override', 'error');
+        return;
+      }
+      toast('Override direset. Sync ulang untuk ambil data Trello terbaru.', 'success');
+      setEditCardId(null);
+      await readTrelloFromDb();
+    } catch {
+      toast('Gagal reset override', 'error');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const userTrelloOtd = useMemo(() => {
     if (!trelloOtd || !userName || trelloDetails.length === 0) return trelloOtd;
-    const onTime = userTrelloDetails.filter(c => c.is_on_time).length;
-    const total = userTrelloDetails.length;
+    const included = userTrelloDetails.filter(c => !c.excluded);
+    const onTime = included.filter(c => c.is_on_time).length;
+    const total = included.length;
     return {
       ...trelloOtd,
       total,
@@ -898,50 +990,69 @@ export default function AdminKpiEditPage() {
                       <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Board</th>
                       <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">List</th>
                       <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Due Date</th>
-                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Tgl Aktivitas</th>
+                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Tgl Selesai</th>
                       <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Selisih</th>
                       <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Aksi</th>
                     </tr>
                   </thead>
                   <tbody>
                     {userTrelloDetails
                       .sort((a, b) => new Date(b.due).getTime() - new Date(a.due).getTime())
                       .map((card, i) => {
-                        const due = new Date(card.due);
-                        const act = new Date(card.completed);
-                        const diffDays = Math.ceil((act.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
-                        const origDue = card.original_due ? new Date(card.original_due) : null;
+                        const due = card.due ? new Date(card.due) : null;
+                        const act = card.completed ? new Date(card.completed) : null;
+                        const diffDays = due && act ? Math.ceil((act.getTime() - due.getTime()) / (1000 * 60 * 60 * 24)) : null;
+                        const anyOverride = card.due_overridden || card.completed_at_overridden || card.is_on_time_overridden;
                         return (
-                          <tr key={i} className={cn('border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors', card.due_changed && 'bg-amber-500/[0.03]')}>
-                            <td className="px-4 py-3 text-white font-medium max-w-[200px] truncate">{card.name}</td>
+                          <tr key={card.card_id || i} className={cn(
+                            'border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors',
+                            card.excluded && 'opacity-50',
+                            anyOverride && !card.excluded && 'bg-amber-500/[0.03]'
+                          )}>
+                            <td className="px-4 py-3 text-white font-medium max-w-[200px] truncate">
+                              {card.name}
+                              {anyOverride && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-semibold" title="Ada override admin">OVR</span>}
+                              {card.excluded && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded bg-gray-500/15 text-gray-400 font-semibold">EXCLUDED</span>}
+                            </td>
                             <td className="px-4 py-3 text-gray-400 text-xs max-w-[150px]">
                               {card.members && card.members.length > 0 ? card.members.join(', ') : <span className="text-gray-600">-</span>}
                             </td>
                             <td className="px-4 py-3 text-gray-500 text-xs max-w-[120px] truncate">{card.board}</td>
                             <td className="px-4 py-3 text-gray-500">{card.list}</td>
                             <td className="px-4 py-3 text-center">
-                              <div className="text-gray-400">{due.toLocaleDateString('id-ID')}</div>
-                              {card.due_changed && origDue && (
-                                <div className="text-[10px] text-amber-400 flex items-center justify-center gap-0.5 mt-0.5" title={`Due date awal: ${origDue.toLocaleDateString('id-ID')}`}>
-                                  <AlertCircle className="w-2.5 h-2.5" />
-                                  <span>awal: {origDue.toLocaleDateString('id-ID')}</span>
-                                </div>
-                              )}
+                              <div className={cn('text-gray-400', card.due_overridden && 'text-amber-400')}>
+                                {due ? due.toLocaleDateString('id-ID') : '—'}
+                              </div>
                             </td>
-                            <td className="px-4 py-3 text-center text-gray-400">{act.toLocaleDateString('id-ID')}</td>
+                            <td className={cn('px-4 py-3 text-center', card.completed_at_overridden ? 'text-amber-400' : 'text-gray-400')}>
+                              {act ? act.toLocaleDateString('id-ID') : '—'}
+                            </td>
                             <td className="px-4 py-3 text-center">
-                              <span className={cn('font-semibold', card.is_on_time ? 'text-emerald-400' : 'text-red-400')}>
-                                {diffDays <= 1 ? `${diffDays}d` : `+${diffDays}d`}
-                              </span>
+                              {diffDays !== null ? (
+                                <span className={cn('font-semibold', card.is_on_time ? 'text-emerald-400' : 'text-red-400')}>
+                                  {diffDays <= 1 ? `${diffDays}d` : `+${diffDays}d`}
+                                </span>
+                              ) : '—'}
                             </td>
                             <td className="px-4 py-3 text-center">
                               <span className={cn(
                                 'inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg',
+                                card.excluded ? 'bg-gray-500/10 text-gray-400' :
                                 card.is_on_time ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
                               )}>
-                                {card.is_on_time ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                                {card.is_on_time ? 'ON TIME' : 'TERLAMBAT'}
+                                {card.excluded ? '—' : card.is_on_time ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                                {card.excluded ? 'EXCLUDED' : card.is_on_time ? 'ON TIME' : 'TERLAMBAT'}
                               </span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <button
+                                onClick={() => openCardEdit(card)}
+                                className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-brand-500/20 text-gray-400 hover:text-brand-300 transition-colors"
+                                title="Edit card override"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
                             </td>
                           </tr>
                         );
@@ -967,6 +1078,96 @@ export default function AdminKpiEditPage() {
           }
         }}
       />
+
+      {/* Card Edit Modal (override) */}
+      {editCardId && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => !savingEdit && setEditCardId(null)}>
+          <div className="bg-[#16161e] border border-white/[0.08] rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-150" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 border-b border-white/[0.06] flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-white">Edit Override Card</h3>
+                <p className="text-xs text-gray-500 mt-0.5 truncate max-w-[300px]">{trelloDetails.find(c => c.card_id === editCardId)?.name || ''}</p>
+              </div>
+              <button onClick={() => !savingEdit && setEditCardId(null)} className="text-gray-500 hover:text-white transition-colors p-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div>
+                <label className="text-xs font-medium text-gray-400 mb-1.5 block">Due Date</label>
+                <input
+                  type="datetime-local"
+                  value={editForm.due}
+                  onChange={(e) => setEditForm((f) => ({ ...f, due: e.target.value }))}
+                  className="w-full bg-[#1a1a2e] border border-white/[0.08] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-brand-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-400 mb-1.5 block">Tanggal Selesai (Completed)</label>
+                <input
+                  type="datetime-local"
+                  value={editForm.completed_at}
+                  onChange={(e) => setEditForm((f) => ({ ...f, completed_at: e.target.value }))}
+                  className="w-full bg-[#1a1a2e] border border-white/[0.08] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-brand-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-400 mb-1.5 block">Status On-Time</label>
+                <select
+                  value={editForm.is_on_time}
+                  onChange={(e) => setEditForm((f) => ({ ...f, is_on_time: e.target.value as 'auto' | 'yes' | 'no' }))}
+                  className="w-full bg-[#1a1a2e] border border-white/[0.08] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-brand-500"
+                >
+                  <option value="auto">Auto (hitung dari due + completed)</option>
+                  <option value="yes">On Time (paksa ya)</option>
+                  <option value="no">Terlambat (paksa tidak)</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={editForm.excluded}
+                  onChange={(e) => setEditForm((f) => ({ ...f, excluded: e.target.checked }))}
+                  className="w-4 h-4 accent-brand-500"
+                />
+                <span className="text-sm text-gray-300">Exclude dari perhitungan OTD</span>
+              </label>
+              <div>
+                <label className="text-xs font-medium text-gray-400 mb-1.5 block">Catatan Admin (opsional)</label>
+                <textarea
+                  value={editForm.admin_note}
+                  onChange={(e) => setEditForm((f) => ({ ...f, admin_note: e.target.value }))}
+                  rows={2}
+                  placeholder="Alasan override..."
+                  className="w-full bg-[#1a1a2e] border border-white/[0.08] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-brand-500 resize-none"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-white/[0.06]">
+              <button
+                onClick={() => resetCardOverride(editCardId)}
+                disabled={savingEdit}
+                className="text-xs text-red-400 hover:text-red-300 transition-colors disabled:opacity-50"
+                title="Hapus semua override, pakai data asli dari Trello"
+              >
+                Reset Override
+              </button>
+              <div className="flex items-center gap-3">
+                <button onClick={() => !savingEdit && setEditCardId(null)} className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">
+                  Batal
+                </button>
+                <button
+                  onClick={saveCardEdit}
+                  disabled={savingEdit}
+                  className="px-5 py-2 bg-brand-500 hover:bg-brand-400 disabled:opacity-50 text-white text-sm font-semibold rounded-xl transition-colors"
+                >
+                  {savingEdit ? 'Menyimpan...' : 'Simpan'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

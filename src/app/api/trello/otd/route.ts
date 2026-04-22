@@ -3,116 +3,14 @@ import { getSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { getWeekDateRange } from '@/lib/utils';
 
-interface TrelloCard {
-  id: string;
-  name: string;
-  due: string | null;
-  dueComplete: boolean;
-  dateLastActivity: string;
-  idList: string;
-  idMembers: string[];
-  closed: boolean;
-}
-
-interface TrelloMember {
-  id: string;
-  fullName: string;
-  username: string;
-}
-
-const TRELLO_API_KEY = process.env.TRELLO_API_KEY || '';
-const TRELLO_TOKEN = process.env.TRELLO_TOKEN || '';
-
-interface TrelloAction {
-  type: string;
-  date: string;
-  data: {
-    card?: { id?: string; name?: string; due?: string };
-    old?: { due?: string | null };
-  };
-}
-
-async function fetchBoardData(boardId: string) {
-  // Fetch board info + lists + cards + members in parallel
-  const [boardRes, listsRes, cardsRes, membersRes] = await Promise.all([
-    fetch(`https://api.trello.com/1/boards/${boardId}?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}&fields=name`),
-    fetch(`https://api.trello.com/1/boards/${boardId}/lists?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}`),
-    fetch(`https://api.trello.com/1/boards/${boardId}/cards/all?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}&fields=name,due,dueComplete,dateLastActivity,idList,idMembers,closed`),
-    fetch(`https://api.trello.com/1/boards/${boardId}/members?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}&fields=fullName,username`),
-  ]);
-
-  if (!listsRes.ok) throw new Error(`Gagal mengambil data list dari board ${boardId}`);
-  if (!cardsRes.ok) throw new Error(`Gagal mengambil data card dari board ${boardId}`);
-
-  const boardInfo = boardRes.ok ? await boardRes.json() : { name: boardId };
-  const boardName: string = boardInfo.name;
-
-  const lists: { id: string; name: string }[] = await listsRes.json();
-  const listMap: Record<string, string> = {};
-  lists.forEach((l) => (listMap[l.id] = l.name));
-
-  // Build member lookup map
-  const members: TrelloMember[] = membersRes.ok ? await membersRes.json() : [];
-  const memberMap: Record<string, string> = {};
-  members.forEach((m) => (memberMap[m.id] = m.fullName));
-
-  const allCards: TrelloCard[] = await cardsRes.json();
-
-  // Filter: cards with due date that are "done", exclude archived lists
-  const doneCards = allCards.filter((c) => {
-    const listName = (listMap[c.idList] || '').toLowerCase();
-    if (listName.includes('archive')) return false;
-    return c.due && (c.dueComplete || listName.includes('done'));
-  });
-
-  return { doneCards, listMap, boardName, memberMap };
-}
-
 /**
- * Fetch original due date for a card by checking its action history.
- * Returns the first due date that was set, or null if due was never changed.
- */
-async function fetchOriginalDue(cardId: string): Promise<string | null> {
-  try {
-    const res = await fetch(
-      `https://api.trello.com/1/cards/${cardId}/actions?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}&filter=updateCard:due&limit=50`
-    );
-    if (!res.ok) return null;
-    const actions: TrelloAction[] = await res.json();
-
-    if (actions.length === 0) return null;
-
-    // Actions are newest-first; the oldest action has the first due date event
-    const oldest = actions[actions.length - 1];
-
-    if (oldest?.data?.old?.due) {
-      // Card was created with a due date, then changed → old.due is the true original
-      return oldest.data.old.due;
-    }
-
-    // oldest old.due is null → due was SET for the first time (not changed from existing)
-    // Need at least 2 actions (set + change) to confirm it was actually modified after
-    if (actions.length >= 2) {
-      return oldest?.data?.card?.due ?? null;
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * GET /api/trello/otd?division_id=xxx&year=2026&month=3
- * Supports multiple boards per division (comma-separated trello_board_id).
+ * GET /api/trello/otd?division_id=xxx&year=2026&month=3[&week=2]
+ * Sumber data: trello_card_snapshots (DB). Bukan live Trello API.
+ * Supaya data refresh, admin perlu klik sync: POST /api/admin/trello/sync.
  */
 export async function GET(request: NextRequest) {
   const user = await getSession();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-  if (!TRELLO_API_KEY || !TRELLO_TOKEN) {
-    return NextResponse.json({ error: 'Trello API key/token belum dikonfigurasi di server' }, { status: 500 });
-  }
 
   const { searchParams } = new URL(request.url);
   const divisionId = searchParams.get('division_id');
@@ -125,93 +23,84 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'division_id diperlukan' }, { status: 400 });
   }
 
-  const { data: division } = await supabaseAdmin
-    .from('divisions')
-    .select('trello_board_id')
-    .eq('id', divisionId)
-    .single();
-
-  if (!division?.trello_board_id) {
-    return NextResponse.json({ error: 'Trello board belum dikonfigurasi untuk divisi ini' }, { status: 404 });
+  // Period scope
+  let periodStart: Date | null = null;
+  let periodEnd: Date | null = null;
+  if (year > 0 && month > 0) {
+    const weekRange = week && week >= 1 && week <= 4 ? getWeekDateRange(year, month, week) : null;
+    periodStart = weekRange ? weekRange.start : new Date(year, month - 1, 1, 0, 0, 0, 0);
+    periodEnd = weekRange ? weekRange.end : new Date(year, month, 0, 23, 59, 59, 999);
   }
 
-  // Support multiple boards (comma-separated)
-  const boardIds = division.trello_board_id.split(',').map((id: string) => id.trim()).filter(Boolean);
+  let query = supabaseAdmin
+    .from('trello_card_snapshots')
+    .select('*')
+    .eq('division_id', divisionId)
+    .eq('deleted_on_trello', false)
+    .order('due', { ascending: true });
 
-  try {
-    // Fetch all boards in parallel
-    const boardResults = await Promise.all(boardIds.map(fetchBoardData));
-
-    // Merge all done cards with their list maps, board names, and member maps
-    const allDoneCards: { card: TrelloCard; listName: string; boardName: string; memberMap: Record<string, string> }[] = [];
-    for (const { doneCards, listMap, boardName, memberMap } of boardResults) {
-      for (const card of doneCards) {
-        allDoneCards.push({ card, listName: listMap[card.idList] || 'Unknown', boardName, memberMap });
-      }
-    }
-
-    // Filter by month/year if provided, then optionally narrow to a single week
-    let filtered = allDoneCards;
-    if (year > 0 && month > 0) {
-      const weekRange = week && week >= 1 && week <= 4 ? getWeekDateRange(year, month, week) : null;
-      filtered = allDoneCards.filter(({ card }) => {
-        const due = new Date(card.due!);
-        if (due.getFullYear() !== year || due.getMonth() + 1 !== month) return false;
-        if (weekRange && (due < weekRange.start || due > weekRange.end)) return false;
-        return true;
-      });
-    }
-
-    // Fetch original due dates in parallel for all filtered cards
-    const originalDues = await Promise.all(
-      filtered.map(({ card }) => fetchOriginalDue(card.id))
-    );
-
-    // Compute OTD
-    let onTime = 0;
-    let late = 0;
-
-    const details = filtered.map(({ card, listName, boardName, memberMap }, idx) => {
-      const due = new Date(card.due!);
-      const act = new Date(card.dateLastActivity);
-      const buffer = new Date(due);
-      buffer.setDate(buffer.getDate() + 1);
-      const isOnTime = act <= buffer;
-
-      if (isOnTime) onTime++;
-      else late++;
-
-      const originalDue = originalDues[idx];
-
-      // Resolve member names from card's idMembers
-      const members = (card.idMembers || []).map((id) => memberMap[id] || id);
-
-      return {
-        name: card.name,
-        list: listName,
-        board: boardName,
-        due: due.toISOString(),
-        completed: act.toISOString(),
-        is_on_time: isOnTime,
-        original_due: originalDue,
-        due_changed: !!originalDue,
-        members,
-      };
-    });
-
-    const total = onTime + late;
-    const otdPercentage = total > 0 ? Math.round((onTime / total) * 10000) / 100 : 0;
-
-    return NextResponse.json({
-      otd_percentage: otdPercentage,
-      on_time: onTime,
-      late,
-      total,
-      boards: boardIds.length,
-      details,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Gagal mengambil data Trello';
-    return NextResponse.json({ error: message }, { status: 500 });
+  if (periodStart && periodEnd) {
+    query = query.gte('due', periodStart.toISOString()).lte('due', periodEnd.toISOString());
   }
+
+  const { data: snapshots, error } = await query;
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  let onTime = 0;
+  let late = 0;
+  type Snapshot = {
+    card_id: string;
+    name: string | null;
+    list_name: string | null;
+    board_name: string | null;
+    due: string | null;
+    completed_at: string | null;
+    is_on_time: boolean | null;
+    excluded: boolean;
+    member_names: string[] | null;
+    admin_note: string | null;
+    due_overridden: boolean;
+    completed_at_overridden: boolean;
+    is_on_time_overridden: boolean;
+  };
+  const typedSnapshots = (snapshots || []) as Snapshot[];
+
+  const details = typedSnapshots.map((s) => {
+    const isOnTime = s.is_on_time;
+    if (!s.excluded) {
+      if (isOnTime === true) onTime++;
+      else if (isOnTime === false) late++;
+    }
+    return {
+      card_id: s.card_id,
+      name: s.name,
+      list: s.list_name,
+      board: s.board_name,
+      due: s.due,
+      completed: s.completed_at,
+      is_on_time: isOnTime ?? false,
+      excluded: s.excluded,
+      members: s.member_names || [],
+      admin_note: s.admin_note,
+      due_overridden: s.due_overridden,
+      completed_at_overridden: s.completed_at_overridden,
+      is_on_time_overridden: s.is_on_time_overridden,
+      // Back-compat field utk UI existing (original_due, due_changed)
+      original_due: null,
+      due_changed: false,
+    };
+  });
+
+  const total = onTime + late;
+  const otdPercentage = total > 0 ? Math.round((onTime / total) * 10000) / 100 : 0;
+
+  return NextResponse.json({
+    otd_percentage: otdPercentage,
+    on_time: onTime,
+    late,
+    total,
+    details,
+  });
 }

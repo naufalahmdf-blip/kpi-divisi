@@ -1,7 +1,7 @@
 import { supabaseAdmin } from './supabase';
 
-export type ActionType = 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'CHANGE_PASSWORD';
-export type EntityType = 'USER' | 'DIVISION' | 'KPI_TEMPLATE' | 'KPI_ENTRY' | 'PROFILE' | 'AUTH' | 'ATTENDANCE';
+export type ActionType = 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'CHANGE_PASSWORD' | 'SYNC';
+export type EntityType = 'USER' | 'DIVISION' | 'KPI_TEMPLATE' | 'KPI_ENTRY' | 'PROFILE' | 'AUTH' | 'ATTENDANCE' | 'TRELLO_SNAPSHOT';
 
 interface LogActivityParams {
   userId: string | null;

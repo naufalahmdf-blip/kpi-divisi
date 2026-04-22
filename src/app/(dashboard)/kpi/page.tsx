@@ -71,7 +71,7 @@ export default function KpiPage() {
   const [trelloLoading, setTrelloLoading] = useState(false);
   const [trelloInfo, setTrelloInfo] = useState<{
     otd: number; onTime: number; late: number; total: number;
-    details: { name: string; list: string; board: string; due: string; completed: string; is_on_time: boolean; original_due: string | null; due_changed: boolean; members: string[] }[];
+    details: { card_id: string; name: string; list: string; board: string; due: string; completed: string; is_on_time: boolean; excluded: boolean; members: string[]; original_due: string | null; due_changed: boolean }[];
   } | null>(null);
   const [showTrelloDetail, setShowTrelloDetail] = useState(false);
   const [showVideoCalc, setShowVideoCalc] = useState(false);
@@ -122,7 +122,7 @@ export default function KpiPage() {
       if (json.trello_otd && divId) {
         const t = json.trello_otd;
         // Eagerly load card details for per-user filtering
-        let details: { name: string; list: string; board: string; due: string; completed: string; is_on_time: boolean; original_due: string | null; due_changed: boolean; members: string[] }[] = [];
+        let details: { card_id: string; name: string; list: string; board: string; due: string; completed: string; is_on_time: boolean; excluded: boolean; members: string[]; original_due: string | null; due_changed: boolean }[] = [];
         try {
           const detailParams = new URLSearchParams({ division_id: divId, year: year.toString(), month: month.toString() });
           if (viewMode === 'weekly') detailParams.append('week', week.toString());
@@ -142,6 +142,7 @@ export default function KpiPage() {
         if (otdTpl && fullName && details.length > 0) {
           const nameLower = fullName.toLowerCase();
           const userCards = details.filter((card) =>
+            !card.excluded &&
             card.members.some((m) => {
               const ml = m.toLowerCase();
               return ml.includes(nameLower) || nameLower.includes(ml);
@@ -206,8 +207,9 @@ export default function KpiPage() {
 
   const userTrelloInfo = useMemo(() => {
     if (!trelloInfo || !userName || trelloInfo.details.length === 0) return trelloInfo;
-    const onTime = userTrelloDetails.filter(c => c.is_on_time).length;
-    const total = userTrelloDetails.length;
+    const included = userTrelloDetails.filter(c => !c.excluded);
+    const onTime = included.filter(c => c.is_on_time).length;
+    const total = included.length;
     return {
       ...trelloInfo,
       total,
@@ -899,7 +901,7 @@ export default function KpiPage() {
                       <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Board</th>
                       <th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">List</th>
                       <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Due Date</th>
-                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Tgl Aktivitas</th>
+                      <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Tgl Selesai</th>
                       <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Selisih</th>
                       <th className="px-4 py-3 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                     </tr>
